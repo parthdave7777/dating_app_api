@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS users (
     latitude              DECIMAL(10,7) DEFAULT NULL,
     longitude             DECIMAL(10,7) DEFAULT NULL,
     city                  VARCHAR(100)  DEFAULT NULL,
+    state                 VARCHAR(100)  DEFAULT NULL,
+    country               VARCHAR(100)  DEFAULT NULL,
     is_verified           TINYINT(1)    DEFAULT 0,
     verification_status   TINYINT(1)    DEFAULT 0,
     profile_complete      TINYINT(1)    DEFAULT 0,

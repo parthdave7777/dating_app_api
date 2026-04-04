@@ -20,7 +20,7 @@ $stmt = $db->prepare("
            interests, height, education, job_title, company,
            lifestyle_pets, lifestyle_drinking, lifestyle_smoking, lifestyle_workout, 
            lifestyle_diet, lifestyle_schedule, communication_style, relationship_goal,
-           latitude, longitude, city, is_verified, profile_complete, setup_completed,
+           latitude, longitude, city, state, country, is_verified, profile_complete, setup_completed,
            discovery_min_age, discovery_max_age, discovery_max_dist, global_discovery,
            notif_matches, notif_messages, notif_likes, notif_activity
     FROM users WHERE id = ?
@@ -117,8 +117,8 @@ echo json_encode([
         'communication_style'=>       $user['communication_style'],
         'relationship_goal' =>        $user['relationship_goal'],
         'city'              =>        $user['city'],
-        'state'             =>        '',
-        'country'           =>        '',
+        'state'             =>        $user['state'] ?? '',
+        'country'           =>        $user['country'] ?? '',
         'latitude'          => (float)($user['latitude'] ?? 0),
         'longitude'         => (float)($user['longitude'] ?? 0),
         'is_verified'       => (bool) $user['is_verified'],

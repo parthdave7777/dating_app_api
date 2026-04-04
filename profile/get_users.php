@@ -57,7 +57,7 @@ $poolConditions = "
 // Use SQL to fetch a slightly larger candidate set to ensure we get enough people after filtering
 $candidateQuery = "
     SELECT u.id, u.full_name, u.age, u.gender, u.bio, u.interests,
-           u.city, u.latitude, u.longitude, 
+           u.city, u.state, u.country, u.latitude, u.longitude, 
            u.is_verified, u.elo_score, u.last_active, u.job_title, u.company, u.education,
            u.lifestyle_drinking, u.lifestyle_smoking, u.lifestyle_workout, u.lifestyle_pets,
            u.lifestyle_diet, u.lifestyle_schedule, u.communication_style, u.relationship_goal,
@@ -186,6 +186,8 @@ foreach ($topCandidates as $s) {
         'bio'            => $row['bio'] ?? '',
         'interests'      => !empty($row['interests']) ? (is_array($row['interests']) ? $row['interests'] : explode(',', (string)$row['interests'])) : [],
         'city'           => $row['city'] ?? '',
+        'state'          => $row['state'] ?? '',
+        'country'        => $row['country'] ?? '',
         'latitude'       => (float)($row['latitude'] ?? 0),
         'longitude'      => (float)($row['longitude'] ?? 0),
         'is_verified'    => (bool)($row['is_verified'] ?? 0),
