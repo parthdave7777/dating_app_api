@@ -1,41 +1,24 @@
 <?php
-// Simple Debug for Parth (ID 23)
+// debug_discovery.php
 require_once __DIR__ . '/config.php';
-
-$userId = 23; // HARDCODING PARTH'S ID
 $db = getDB();
+echo "<h1>🔍 Discovery Debugger</h1>";
 
-// Fetch Parth's requirements
-$meQuery = "SELECT id, age, gender, looking_for, latitude, longitude FROM users WHERE id = $userId";
-$meRs = $db->query($meQuery);
-$me = $meRs->fetch_assoc();
+$userId = getAuthUserId();
+$res = $db->query("SELECT * FROM users WHERE id = $userId");
+$me = $res->fetch_assoc();
 
-$myLookingFor = strtolower(trim($me['looking_for']));
-echo "Parth (23) is looking for: [" . $myLookingFor . "]\n";
+echo "<strong>YOU:</strong> Lat: " . ($me['latitude'] ?: 'NULL') . " Lon: " . ($me['longitude'] ?: 'NULL') . "<br>";
 
-// Manual Query for Hetanshi (ID 24)
-$targetId = 24;
-$targetQuery = "SELECT id, full_name, age, gender, latitude, longitude FROM users WHERE id = $targetId";
-$targetRs = $db->query($targetQuery);
-$target = $targetRs->fetch_assoc();
+$others = $db->query("SELECT id, full_name, profile_complete, gender, age, latitude FROM users WHERE id != $userId");
 
-$targetGender = strtolower(trim($target['gender']));
-echo "Target (Hetanshi, 24) gender is: [" . $targetGender . "]\n";
-
-// Check the Clause
-$genderClause = ($targetGender === $myLookingFor) ? "MATCH FOUND" : "NO MATCH";
-echo "Gender Match Result: " . $genderClause . "\n";
-
-// Check Distance
-$dist = 0;
-if ($me['latitude'] && $target['latitude']) {
-    $R = 6371; 
-    $dLat = deg2rad($target['latitude'] - $me['latitude']);
-    $dLon = deg2rad($target['longitude'] - $me['longitude']);
-    $a = sin($dLat/2) * sin($dLat/2) + cos(deg2rad($me['latitude'])) * cos(deg2rad($target['latitude'])) * sin($dLon/2) * sin($dLon/2);
-    $dist = $R * 2 * atan2(sqrt($a), sqrt(1-$a));
+echo "<h3>Other Users Found (" . $others->num_rows . "):</h3>";
+while ($u = $others->fetch_assoc()) {
+    echo "- <strong>" . $u['full_name'] . "</strong>: ";
+    echo ($u['profile_complete'] == 1 ? "✅ Complete" : "❌ INCOMPLETE");
+    echo " | Gender: " . $u['gender'];
+    echo " | Age: " . $u['age'];
+    echo " | Lat: " . ($u['latitude'] ?: 'NULL');
+    echo "<br>";
 }
-echo "Calculated Distance: " . $dist . " km\n";
-
-$db->close();
 ?>
