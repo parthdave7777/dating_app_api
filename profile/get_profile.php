@@ -122,7 +122,7 @@ echo json_encode([
         'discovery_min_age'  => (int)  ($user['discovery_min_age']  ?? 18),
         'discovery_max_age'  => (int)  ($user['discovery_max_age']  ?? 55),
         'discovery_max_dist' => (int)  ($user['discovery_max_dist'] ?? 50),
-        'global_discovery'   => (bool) ($user['global_discovery']   ?? 1),
+        'global_discovery'   => (bool) ($user['global_discovery']   ?? 0),
         'notif_matches'      => (bool) ($user['notif_matches']      ?? 1),
         'notif_messages'     => (bool) ($user['notif_messages']     ?? 1),
         'notif_likes'        => (bool) ($user['notif_likes']        ?? 1),

@@ -11,8 +11,10 @@ if (!function_exists('sendPush')) {
 
 // ── Path to your service account JSON file ────────────────────
 // Place legitdate-d69ce-f98ee630c9c2.json in your dating_api root.
-define('FCM_SERVICE_ACCOUNT_PATH', __DIR__ . '/../legitdate-d69ce-f98ee630c9c2.json');
-define('FCM_PROJECT_ID', 'legitdate-d69ce');
+if (!defined('FCM_PROJECT_ID')) define('FCM_PROJECT_ID', 'legitdate-d69ce');
+if (!defined('FCM_SERVICE_ACCOUNT_PATH')) {
+    define('FCM_SERVICE_ACCOUNT_PATH', dirname(__DIR__) . '/legitdate-d69ce-f98ee630c9c2.json');
+}
 
 // ─────────────────────────────────────────────────────────────
 //  Generate OAuth2 Bearer token from Service Account JSON
