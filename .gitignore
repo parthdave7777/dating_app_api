@@ -1,0 +1,11 @@
+vendor/
+.env
+.env.*
+uploads/
+*.log
+*.txt
+.DS_Store
+*.json
+!composer.json
+!package.json
+!config.php

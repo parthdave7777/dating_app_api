@@ -1,0 +1,49 @@
+# dating_api/.htaccess
+# Production: InfinityFree (deevtestt.free.nf)
+
+# ─── CORS ─────────────────────────────────────────────────────
+Header always set Access-Control-Allow-Origin "*"
+Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS"
+Header always set Access-Control-Allow-Headers "Content-Type, Authorization"
+
+# Handle pre-flight OPTIONS requests
+RewriteEngine On
+RewriteCond %{REQUEST_METHOD} OPTIONS
+RewriteRule ^ - [R=200,L]
+
+# Pass Authorization header through to PHP
+# (InfinityFree strips it by default — this restores it)
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+# Also expose it via REDIRECT_ prefix fallback
+SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+
+# ─── PHP settings ─────────────────────────────────────────────
+# InfinityFree limits max_execution_time via ini, not htaccess,
+# so php_value is used where supported.
+php_value max_execution_time 60
+php_value max_input_time 60
+php_value upload_max_filesize 52M
+php_value post_max_size 55M
+php_value memory_limit 128M
+
+# Hide PHP errors from clients (log only)
+php_flag display_errors Off
+php_value error_reporting 0
+
+# ─── Security ─────────────────────────────────────────────────
+# Block direct access to sensitive files
+<FilesMatch "^(config|schema|reset_and_seed)\.(php|sql)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Block JSON key files
+<FilesMatch "\.json$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Disable directory listing
+Options -Indexes
