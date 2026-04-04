@@ -56,11 +56,7 @@ $poolConditions = "
 
 // Use SQL to fetch a slightly larger candidate set to ensure we get enough people after filtering
 $candidateQuery = "
-    SELECT u.id, u.full_name, u.age, u.gender, u.bio, u.interests,
-           u.city, u.state, u.country, u.latitude, u.longitude, 
-           u.is_verified, u.elo_score, u.last_active, u.job_title, u.company, u.education,
-           u.lifestyle_drinking, u.lifestyle_smoking, u.lifestyle_workout, u.lifestyle_pets,
-           u.lifestyle_diet, u.lifestyle_schedule, u.communication_style, u.relationship_goal,
+    SELECT u.*,
            COALESCE(
                (SELECT photo_url FROM user_photos WHERE user_id = u.id AND is_dp = 1 LIMIT 1),
                (SELECT photo_url FROM user_photos WHERE user_id = u.id LIMIT 1)

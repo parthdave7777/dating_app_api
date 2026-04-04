@@ -15,27 +15,17 @@ if (isset($_GET['target_id']) && (int)$_GET['target_id'] !== $userId) {
     $targetId = $userId;
 }
 
-$stmt = $db->prepare("
-    SELECT id, phone_number, full_name, age, gender, looking_for, bio,
-           interests, height, education, job_title, company,
-           lifestyle_pets, lifestyle_drinking, lifestyle_smoking, lifestyle_workout, 
-           lifestyle_diet, lifestyle_schedule, communication_style, relationship_goal,
-           latitude, longitude, city, state, country, is_verified, profile_complete, setup_completed,
-           discovery_min_age, discovery_max_age, discovery_max_dist, global_discovery,
-           notif_matches, notif_messages, notif_likes, notif_activity
-    FROM users WHERE id = ?
-");
+$stmt = $db->prepare("SELECT * FROM users WHERE id = ?");
 $stmt->bind_param('i', $targetId);
 $stmt->execute();
 $result = $stmt->get_result();
+$user = $result->fetch_assoc();
 $stmt->close();
 
-if ($result->num_rows === 0) {
+if (!$user) {
     echo json_encode(['status' => 'error', 'message' => 'User not found']);
     exit();
 }
-
-$user = $result->fetch_assoc();
 
 // Fetch photos — return as objects with url + is_dp so Flutter can use p['url']
 $photoStmt = $db->prepare(
