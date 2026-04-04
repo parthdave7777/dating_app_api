@@ -38,6 +38,15 @@ CREATE TABLE IF NOT EXISTS users (
     is_new_user_boost     TINYINT(1)    DEFAULT 1,
     new_user_boost_expires DATETIME     DEFAULT NULL,
     show_in_discovery     TINYINT(1)    DEFAULT 1,
+    discovery_min_age     INT           DEFAULT 18,
+    discovery_max_age     INT           DEFAULT 100,
+    discovery_min_dist    INT           DEFAULT 0,
+    discovery_max_dist    INT           DEFAULT 50,
+    global_discovery      TINYINT(1)    DEFAULT 0,
+    notif_matches         TINYINT(1)    DEFAULT 1,
+    notif_messages        TINYINT(1)    DEFAULT 1,
+    notif_likes           TINYINT(1)    DEFAULT 1,
+    notif_activity        TINYINT(1)    DEFAULT 0,
     created_at            TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
     updated_at            TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
