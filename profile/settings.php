@@ -16,9 +16,9 @@ $allowed = [
     'notif_matches', 
     'notif_messages', 
     'notif_likes', 
-    'notif_who_swiped',
     'discovery_min_age',
     'discovery_max_age',
+    'discovery_min_dist',
     'discovery_max_dist',
     'global_discovery'
 ];
