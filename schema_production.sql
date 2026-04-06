@@ -144,6 +144,7 @@ CREATE TABLE IF NOT EXISTS messages (
     read_at      DATETIME     DEFAULT NULL,
     received_at  DATETIME     DEFAULT NULL,
     opened_at    DATETIME     DEFAULT NULL,
+    deleted_at   DATETIME     DEFAULT NULL,
     call_event   VARCHAR(50)  DEFAULT NULL,
     duration     INT          DEFAULT NULL,
     reply_to_id  INT          DEFAULT NULL,

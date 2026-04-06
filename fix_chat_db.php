@@ -20,6 +20,7 @@ $updates = [
         'is_view_once' => "ALTER TABLE messages ADD COLUMN is_view_once TINYINT(1) DEFAULT 0 AFTER is_saved",
         'is_opened'    => "ALTER TABLE messages ADD COLUMN is_opened TINYINT(1) DEFAULT 0 AFTER is_view_once",
         'opened_at'    => "ALTER TABLE messages ADD COLUMN opened_at DATETIME DEFAULT NULL AFTER received_at",
+        'deleted_at'   => "ALTER TABLE messages ADD COLUMN deleted_at DATETIME DEFAULT NULL AFTER opened_at",
     ],
     'users' => [
         'full_name' => "ALTER TABLE users ADD COLUMN full_name VARCHAR(100) DEFAULT NULL",
