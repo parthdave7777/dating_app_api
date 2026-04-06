@@ -21,6 +21,9 @@ $updates = [
         'is_opened'    => "ALTER TABLE messages ADD COLUMN is_opened TINYINT(1) DEFAULT 0 AFTER is_view_once",
         'opened_at'    => "ALTER TABLE messages ADD COLUMN opened_at DATETIME DEFAULT NULL AFTER received_at",
         'deleted_at'   => "ALTER TABLE messages ADD COLUMN deleted_at DATETIME DEFAULT NULL AFTER opened_at",
+        'deleted_by'   => "ALTER TABLE messages ADD COLUMN deleted_by INT DEFAULT NULL AFTER deleted_at",
+        'is_edited'    => "ALTER TABLE messages ADD COLUMN is_edited TINYINT(1) DEFAULT 0 AFTER is_opened",
+        'is_saved'     => "ALTER TABLE messages ADD COLUMN is_saved TINYINT(1) DEFAULT 0 AFTER is_edited",
     ],
     'users' => [
         'full_name' => "ALTER TABLE users ADD COLUMN full_name VARCHAR(100) DEFAULT NULL",
