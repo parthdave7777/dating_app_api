@@ -68,7 +68,16 @@ $elapsed  = 0;
 
 // BUG FIX: Close unused result sets and reuse prepared statements
 // to avoid "commands out of sync" MySQL errors during the loop.
-$lastReadHash = getReadHash($db, $matchId);
+// Read the last read hash from the client to skip unnecessary waiting if they are out of sync.
+$clientReadHash = $_GET['lastReadHash'] ?? null;
+$lastReadHash   = $clientReadHash ?? getReadHash($db, $matchId);
+
+// If the client's hash is already different, return a full reload immediately.
+if ($clientReadHash !== null && $clientReadHash !== getReadHash($db, $matchId)) {
+    echo json_encode(buildFullResponse($db, $matchId, $userId, $otherId));
+    $db->close();
+    exit();
+}
 
 while ($elapsed < $timeout) {
     // BUG FIX: Use a lightweight COUNT query first before doing full fetch
