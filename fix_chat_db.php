@@ -1,39 +1,47 @@
 <?php
 /**
  * fix_chat_db.php
- * Run this script to add missing columns to the messages table.
- * These columns are required for the chat detail screen to function correctly.
+ * Updated: Manual check for existing columns for compatibility.
  */
 require_once __DIR__ . '/config.php';
 $db = getDB();
 
 echo "<h1>🚀 Fixing Chat Database Schema...</h1>";
 
-$queries = [
-    // 1. Add missing columns to messages table
-    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_received TINYINT(1) DEFAULT 0 AFTER is_read",
-    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS received_at DATETIME DEFAULT NULL AFTER read_at",
-    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_view_once TINYINT(1) DEFAULT 0 AFTER is_opened",
-    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_opened TINYINT(1) DEFAULT 0 AFTER is_view_once",
-    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS opened_at DATETIME DEFAULT NULL AFTER received_at",
-    
-    // 2. Ensure users table has necessary columns (just in case)
-    "ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(100) DEFAULT NULL",
-    "ALTER TABLE user_photos ADD COLUMN IF NOT EXISTS is_dp TINYINT(1) DEFAULT 0",
+function columnExists(mysqli $db, string $table, string $column): bool {
+    $res = $db->query("SHOW COLUMNS FROM `$table` LIKE '$column'");
+    return $res && $res->num_rows > 0;
+}
+
+$updates = [
+    'messages' => [
+        'is_received'  => "ALTER TABLE messages ADD COLUMN is_received TINYINT(1) DEFAULT 0 AFTER is_read",
+        'received_at'  => "ALTER TABLE messages ADD COLUMN received_at DATETIME DEFAULT NULL AFTER read_at",
+        'is_view_once' => "ALTER TABLE messages ADD COLUMN is_view_once TINYINT(1) DEFAULT 0 AFTER is_saved",
+        'is_opened'    => "ALTER TABLE messages ADD COLUMN is_opened TINYINT(1) DEFAULT 0 AFTER is_view_once",
+        'opened_at'    => "ALTER TABLE messages ADD COLUMN opened_at DATETIME DEFAULT NULL AFTER received_at",
+    ],
+    'users' => [
+        'full_name' => "ALTER TABLE users ADD COLUMN full_name VARCHAR(100) DEFAULT NULL",
+    ],
+    'user_photos' => [
+        'is_dp' => "ALTER TABLE user_photos ADD COLUMN is_dp TINYINT(1) DEFAULT 0",
+    ]
 ];
 
-foreach ($queries as $q) {
-    try {
-        if ($db->query($q)) {
-            echo "✅ Success: $q<br>";
+foreach ($updates as $table => $cols) {
+    foreach ($cols as $col => $query) {
+        if (!columnExists($db, $table, $col)) {
+            if ($db->query($query)) {
+                echo "✅ Added: $table.$col<br>";
+            } else {
+                echo "❌ Error adding $col: " . $db->error . "<br>";
+            }
         } else {
-            echo "❌ Error: " . $db->error . " | Query: $q<br>";
+            echo "ℹ️ Exists: $table.$col<br>";
         }
-    } catch (Exception $e) {
-        echo "⚠️ Note: " . $e->getMessage() . " (Column might already exist)<br>";
     }
 }
 
 $db->close();
 echo "<h2>🎉 DONE! The chat screen should now load correctly.</h2>";
-?>
