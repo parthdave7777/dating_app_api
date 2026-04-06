@@ -24,15 +24,19 @@ function getFcmAccessToken(): ?string {
     static $cachedToken    = null;
     static $cachedExpiry   = 0;
 
-    // SPEED OPT 3: Try APCu cache first — survives across PHP requests (~200-400ms saving per swipe)
+    // SPEED OPT 3: Try APCu cache first
     if (function_exists('apcu_fetch')) {
         $apcuToken = apcu_fetch('fcm_access_token', $success);
         if ($success && $apcuToken) return $apcuToken;
     }
 
-    // Fall back to static variable cache (same request)
-    if ($cachedToken && time() < $cachedExpiry - 60) {
-        return $cachedToken;
+    // NEW: Disk-based cache for servers without APCu (like basic hosting/XAMPP)
+    $cacheFile = sys_get_temp_dir() . '/fcm_token_cache.json';
+    if (file_exists($cacheFile)) {
+        $cached = json_decode(file_get_contents($cacheFile), true);
+        if ($cached && isset($cached['token']) && time() < $cached['expiry'] - 60) {
+            return $cached['token'];
+        }
     }
 
     if (!file_exists(FCM_SERVICE_ACCOUNT_PATH)) {
@@ -111,10 +115,16 @@ function getFcmAccessToken(): ?string {
     $cachedToken  = $tokenData['access_token'];
     $cachedExpiry = $now + (int)($tokenData['expires_in'] ?? 3600);
 
-    // SPEED OPT 3: Store in APCu with 55-min TTL (token valid 1h, 5-min buffer)
-    if (function_exists('apcu_store') && !empty($tokenData['access_token'])) {
-        apcu_store('fcm_access_token', $tokenData['access_token'], 3300);
+    // 1. Store in memory (APCu)
+    if (function_exists('apcu_store')) {
+        apcu_store('fcm_access_token', $cachedToken, 3300);
     }
+
+    // 2. Store on disk (New)
+    file_put_contents($cacheFile, json_encode([
+        'token'  => $cachedToken,
+        'expiry' => $cachedExpiry
+    ]));
 
     return $cachedToken;
 }
@@ -256,7 +266,7 @@ function sendPush(
             ],
             CURLOPT_POSTFIELDS     => json_encode($message),
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 3,  // Reduced from 8s
+            CURLOPT_TIMEOUT        => 1, // Reduced to 1s for speed
         ]);
 
         $result   = curl_exec($ch);
