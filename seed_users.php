@@ -14,6 +14,8 @@ $bios = ["Love traveling and coffee.", "Avid hiker and dog lover.", "Music is my
 $interests = ["Music", "Travel", "Cooking", "Gaming", "Yoga", "Hiking", "Photography", "Movies", "Reading", "Dancing"];
 
 echo "<h1>Seeding 500 Users... Please wait.</h1>";
+// Buffer Buster: browsers wait for 1KB-4KB before rendering anything
+echo str_repeat(" ", 4096); 
 echo "<div id='progress' style='font-family: monospace; line-height: 1.5;'>";
 
 for ($i = 1; $i <= 500; $i++) {
@@ -45,11 +47,17 @@ for ($i = 1; $i <= 500; $i++) {
         $photo2 = "https://picsum.photos/seed/u{$userId}b/600/800";
         
         // Match column name to 'photo_url' as seen in get_profile.php
-        $db->query("INSERT INTO user_photos (user_id, photo_url, is_dp) VALUES ($userId, '$photo1', 1)");
-        $db->query("INSERT INTO user_photos (user_id, photo_url, is_dp) VALUES ($userId, '$photo2', 0)");
+        $q1 = "INSERT INTO user_photos (user_id, photo_url, is_dp) VALUES ($userId, '$photo1', 1)";
+        $q2 = "INSERT INTO user_photos (user_id, photo_url, is_dp) VALUES ($userId, '$photo2', 0)";
+        
+        if (!$db->query($q1)) echo "ERROR P1: " . $db->error . "<br>";
+        if (!$db->query($q2)) echo "ERROR P2: " . $db->error . "<br>";
         
         // Also update the main dp_url in users table for fast discovery loading
         $db->query("UPDATE users SET dp_url = '$photo1' WHERE id = $userId");
+    } else {
+        echo "<span style='color:red;'>FAILED USER $i: " . $db->error . "</span><br>";
+        @flush();
     }
 }
 
