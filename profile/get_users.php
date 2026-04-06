@@ -54,9 +54,19 @@ $poolConditions = "
     )
 ";
 
-// Use SQL to fetch a slightly larger candidate set to ensure we get enough people after filtering
+// Pagination Setup
+$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+if ($page < 1) $page = 1;
+$limit = 30;
+$offset = ($page - 1) * $limit;
+
+// 5. Build Discovery Pool
 $candidateQuery = "
-    SELECT u.*,
+    SELECT 
+        u.id, u.full_name, u.age, u.gender, u.bio, u.interests, u.city, u.state, u.country, 
+        u.latitude, u.longitude, u.is_verified, u.elo_score, u.job_title, u.company, u.education,
+        u.lifestyle_drinking, u.lifestyle_smoking, u.lifestyle_workout, u.lifestyle_pets, 
+        u.lifestyle_diet, u.lifestyle_schedule, u.communication_style, u.relationship_goal, u.last_active,
            COALESCE(
                (SELECT photo_url FROM user_photos WHERE user_id = u.id AND is_dp = 1 LIMIT 1),
                (SELECT photo_url FROM user_photos WHERE user_id = u.id LIMIT 1)
@@ -65,7 +75,8 @@ $candidateQuery = "
     LEFT JOIN swipes s ON s.swiper_id = $userId AND s.swiped_id = u.id
     WHERE $poolConditions
       AND (s.id IS NULL OR (s.action = 'dislike' AND s.created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)))
-    LIMIT 2000
+    ORDER BY u.last_active DESC
+    LIMIT $limit OFFSET $offset
 ";
 
 $candidateResult = $db->query($candidateQuery);
