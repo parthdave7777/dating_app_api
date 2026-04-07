@@ -8,6 +8,7 @@ $db = getDB();
 
 // LIST OF COLUMNS TO BE REMOVED (THE DEAD ONES)
 $deadColumns = [
+    'education',            // Consolidated into job_title/company
     'height',               // Not shown in profile or search
     'state',                // Unified into 'city' string manually
     'country',              // Unified into 'city' string manually

@@ -29,7 +29,6 @@ $lookingFor  = $genderMap[$lookingForRaw] ?? $lookingForRaw;
 $bio             = trim($body['bio']             ?? '');
 $interests       = trim($body['interests']       ?? '');
 $height          = trim($body['height']          ?? '');
-$education       = trim($body['education']       ?? '');
 $jobTitle        = trim($body['job_title']       ?? '');
 $company         = trim($body['company']         ?? '');
 $pets            = trim($body['lifestyle_pets']  ?? '');
@@ -60,7 +59,6 @@ $stmt = $db->prepare("
         bio = ?,
         interests = ?, 
         height = ?, 
-        education = ?, 
         job_title = ?,
         company = ?, 
         lifestyle_pets = ?, 
@@ -85,9 +83,9 @@ if (!$stmt) {
 }
 
 $stmt->bind_param(
-    'sissssssssssssssssddsi',
+    'sisssssssssssssssddsi',
     $fullName, $age, $gender, $lookingFor, $bio,
-    $interests, $height, $education, $jobTitle,
+    $interests, $height, $jobTitle,
     $company, $pets, $drinking, $smoking,
     $workout, $diet, $schedule,
     $relationshipGoal, $commStyle, $latitude,
