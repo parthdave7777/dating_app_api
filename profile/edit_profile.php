@@ -68,7 +68,7 @@ $stmt = $db->prepare("
         communication_style = ?
     WHERE id = ?
 ");
-$stmt->bind_param('sisssssssssssi', 
+$stmt->bind_param('sisssssssssssssi', 
     $fullName, $age, $gender, $lookingFor, $bio, $interests, 
     $jobTitle, $company,
     $pets, $smoking, $workout, $diet, $schedule,
