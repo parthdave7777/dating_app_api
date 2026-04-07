@@ -33,7 +33,7 @@ $hasCoords   = ($myLat != 0 && $myLng != 0);
 
 $minAge = isset($_GET['min_age']) ? (int)$_GET['min_age'] : 18;
 $maxAge = isset($_GET['max_age']) ? (int)$_GET['max_age'] : 100;
-$minDist = isset($_GET['min_dist']) ? (int)$_GET['min_dist'] : 1;
+$minDist = isset($_GET['min_dist']) ? (int)$_GET['min_dist'] : 0;
 $maxDist = isset($_GET['max_dist']) ? (int)$_GET['max_dist'] : 50;
 $isGlobal = isset($_GET['global_discovery']) ? ($_GET['global_discovery'] === 'true' || $_GET['global_discovery'] === '1') : true;
 
@@ -43,9 +43,8 @@ $targetGender = (strtolower($me['gender'] ?? '') === 'woman') ? 'man' : 'woman';
 // 5. Build Discovery Pool
 $poolConditions = "
     u.id != $userId
-    AND u.profile_complete = 1 
     AND u.show_in_discovery = 1
-    AND LOWER(u.gender) = ?
+    AND LOWER(u.gender) = LOWER(?)
     AND u.age >= ? AND u.age <= ?
     AND u.id NOT IN (
         SELECT blocked_user_id FROM blocks WHERE blocker_id = ?
@@ -195,12 +194,12 @@ foreach ($topCandidates as $s) {
         'job_title'      => $row['job_title'] ?? '',
         'company'        => $row['company'] ?? '',
         'education'      => $row['education'] ?? '',
-        'drinking'       => $row['lifestyle_drinking'] ?? '',
-        'smoking'        => $row['lifestyle_smoking'] ?? '',
-        'workout'        => $row['lifestyle_workout'] ?? '',
-        'pets'           => $row['lifestyle_pets'] ?? '',
-        'diet'           => $row['lifestyle_diet'] ?? '',
-        'schedule'       => $row['lifestyle_schedule'] ?? '',
+        'lifestyle_drinking' => $row['lifestyle_drinking'] ?? '',
+        'lifestyle_smoking'  => $row['lifestyle_smoking'] ?? '',
+        'lifestyle_workout'  => $row['lifestyle_workout'] ?? '',
+        'lifestyle_pets'     => $row['lifestyle_pets'] ?? '',
+        'lifestyle_diet'     => $row['lifestyle_diet'] ?? '',
+        'lifestyle_schedule' => $row['lifestyle_schedule'] ?? '',
         'communication_style' => $row['communication_style'] ?? '',
         'relationship_goal' => $row['relationship_goal'] ?? '',
         'is_active_now'  => (strtotime($row['last_active']) > (time() - 300)) // Active in last 5 mins
