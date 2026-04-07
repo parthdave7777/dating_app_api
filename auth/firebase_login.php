@@ -86,8 +86,6 @@ $token = generateToken($userId);
 // Update last_active and expire new user boost check
 $activeDb = getDB();
 $activeDb->query("UPDATE users SET last_active = NOW() WHERE id = $userId");
-// Set new_user_boost_expires if this is a new user (only first time)
-$activeDb->query("UPDATE users SET new_user_boost_expires = DATE_ADD(NOW(), INTERVAL 2 DAY) WHERE id = $userId AND new_user_boost_expires IS NULL");
 $activeDb->close();
 
 $db->close();

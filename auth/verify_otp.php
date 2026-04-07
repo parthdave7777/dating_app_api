@@ -76,8 +76,6 @@ try {
 
     // Update last_active
     $db->query("UPDATE users SET last_active = NOW() WHERE id = $userId");
-    // Set boost expires for new users
-    $db->query("UPDATE users SET new_user_boost_expires = DATE_ADD(NOW(), INTERVAL 2 DAY) WHERE id = $userId AND new_user_boost_expires IS NULL");
     
     $db->close();
 
