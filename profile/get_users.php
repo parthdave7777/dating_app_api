@@ -37,14 +37,23 @@ $minDist = isset($_GET['min_dist']) ? (int)$_GET['min_dist'] : 0;
 $maxDist = isset($_GET['max_dist']) ? (int)$_GET['max_dist'] : 50;
 $isGlobal = isset($_GET['global_discovery']) ? ($_GET['global_discovery'] === 'true' || $_GET['global_discovery'] === '1') : true;
 
-// 4. Gender Filter (Heterosexual Matchmaking)
-$targetGender = (strtolower($me['gender'] ?? '') === 'woman') ? 'man' : 'woman';
+// 4. Gender Normalization & Reciprocal Matching
+$myGender = strtolower($me['gender'] ?? '');
+if (in_array($myGender, ['male', 'man', 'm'])) $myGenderNormalized = 'man';
+elseif (in_array($myGender, ['female', 'woman', 'f'])) $myGenderNormalized = 'woman';
+else $myGenderNormalized = 'other';
 
-// 5. Build Discovery Pool
+$targetGender = ($myGenderNormalized === 'woman') ? 'man' : 'woman';
+
+// 5. Build Discovery Pool (Mutual Interest)
+// Candidates must want our gender, and we must want theirs.
 $poolConditions = "
     u.id != $userId
     AND u.show_in_discovery = 1
-    AND LOWER(u.gender) = LOWER(?)
+    AND (
+        (LOWER(u.gender) IN ('man','male','m') AND ? = 'man') OR
+        (LOWER(u.gender) IN ('woman','female','w') AND ? = 'woman')
+    )
     AND u.age >= ? AND u.age <= ?
     AND u.id NOT IN (
         SELECT blocked_user_id FROM blocks WHERE blocker_id = ?
@@ -53,9 +62,8 @@ $poolConditions = "
     )
 ";
 
-// Use SQL to fetch a slightly larger candidate set to ensure we get enough people after filtering
 $candidateQuery = "
-    SELECT u.id, u.full_name, u.age, u.gender, u.bio, u.interests,
+    SELECT u.id, u.full_name, u.age, u.gender, u.looking_for, u.bio, u.interests,
            u.city, u.latitude, u.longitude, 
            u.is_verified, u.elo_score, u.last_active, u.job_title, u.company, u.education,
            u.lifestyle_drinking, u.lifestyle_smoking, u.lifestyle_workout, u.lifestyle_pets,
@@ -72,7 +80,9 @@ $candidateQuery = "
 ";
 
 $stmt = $db->prepare($candidateQuery);
-$stmt->bind_param('siiiii', $targetGender, $minAge, $maxAge, $userId, $userId, $userId);
+// Params: 1. userId (swipes join), 2. targetGender (gender check 1), 3. targetGender (gender check 2), 
+// 4. minAge, 5. maxAge, 6. userId (blocks blocker), 7. userId (blocks blocked)
+$stmt->bind_param('issiiii', $userId, $targetGender, $targetGender, $minAge, $maxAge, $userId, $userId);
 $stmt->execute();
 $candidateResult = $stmt->get_result();
 $stmt->close();
