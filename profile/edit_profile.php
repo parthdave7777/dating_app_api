@@ -35,6 +35,7 @@ $jobTitle    = trim($body['job_title']    ?? '');
 $company     = trim($body['company']      ?? '');
 $education   = trim($body['education']    ?? '');
 $height      = trim($body['height']       ?? '');
+$pets        = trim($body['lifestyle_pets']    ?? '');
 $drinking    = trim($body['lifestyle_drinking'] ?? '');
 $smoking     = trim($body['lifestyle_smoking'] ?? '');
 $workout     = trim($body['lifestyle_workout'] ?? '');
@@ -42,6 +43,8 @@ $diet        = trim($body['lifestyle_diet']    ?? '');
 $schedule    = trim($body['lifestyle_schedule'] ?? '');
 $goal        = trim($body['relationship_goal']  ?? '');
 $commStyle   = trim($body['communication_style']?? '');
+$city        = trim($body['city']               ?? '');
+$showInDisc  = isset($body['show_in_discovery']) ? (int)$body['show_in_discovery'] : 1;
 
 if (empty($fullName)) {
     echo json_encode(['status' => 'error', 'message' => 'full_name is required']);
@@ -68,7 +71,9 @@ $stmt = $db->prepare("
         lifestyle_diet = ?,
         lifestyle_schedule = ?,
         relationship_goal = ?,
-        communication_style = ?
+        communication_style = ?,
+        city = ?,
+        show_in_discovery = ?
     WHERE id = ?
 ");
 
@@ -77,11 +82,11 @@ if (!$stmt) {
     exit();
 }
 
-$stmt->bind_param('sissssssssssssssssi', 
+$stmt->bind_param('sisssssssssssssssssii', 
     $fullName, $age, $gender, $lookingFor, $bio, $interests, 
     $jobTitle, $company, $education, $height,
     $pets, $drinking, $smoking, $workout, $diet, $schedule,
-    $goal, $commStyle,
+    $goal, $commStyle, $city, $showInDisc,
     $userId
 );
 
