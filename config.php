@@ -25,7 +25,7 @@ if (file_exists(__DIR__ . '/vendor/autoload.php')) {
 }
 
 // ─── ENVIRONMENT: set to 'local' for localhost, 'production' for live server ───
-define('APP_ENV', getenv('APP_ENV') ?: 'local'); 
+define('APP_ENV', getenv('APP_ENV') ?: 'local'); // Uses environment variable if set
 
 if (APP_ENV === 'local') {
     // ── LOCAL XAMPP/WAMP/MAMP DATABASE ──────────────────────

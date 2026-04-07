@@ -15,17 +15,27 @@ if (isset($_GET['target_id']) && (int)$_GET['target_id'] !== $userId) {
     $targetId = $userId;
 }
 
-$stmt = $db->prepare("SELECT * FROM users WHERE id = ?");
+$stmt = $db->prepare("
+    SELECT id, phone_number, full_name, age, gender, looking_for, bio,
+           interests, height, education, job_title, company,
+           lifestyle_pets, lifestyle_drinking, lifestyle_smoking, lifestyle_workout, 
+           lifestyle_diet, lifestyle_schedule, communication_style, relationship_goal,
+           latitude, longitude, city, is_verified, profile_complete, setup_completed,
+           discovery_min_age, discovery_max_age, discovery_max_dist, discovery_min_dist, global_discovery,
+           notif_matches, notif_messages, notif_likes, notif_who_swiped, notif_activity
+    FROM users WHERE id = ?
+");
 $stmt->bind_param('i', $targetId);
 $stmt->execute();
 $result = $stmt->get_result();
-$user = $result->fetch_assoc();
 $stmt->close();
 
-if (!$user) {
+if ($result->num_rows === 0) {
     echo json_encode(['status' => 'error', 'message' => 'User not found']);
     exit();
 }
+
+$user = $result->fetch_assoc();
 
 // Fetch photos — return as objects with url + is_dp so Flutter can use p['url']
 $photoStmt = $db->prepare(
@@ -107,8 +117,8 @@ echo json_encode([
         'communication_style'=>       $user['communication_style'],
         'relationship_goal' =>        $user['relationship_goal'],
         'city'              =>        $user['city'],
-        'state'             =>        $user['state'] ?? '',
-        'country'           =>        $user['country'] ?? '',
+        'state'             =>        '',
+        'country'           =>        '',
         'latitude'          => (float)($user['latitude'] ?? 0),
         'longitude'         => (float)($user['longitude'] ?? 0),
         'is_verified'       => (bool) $user['is_verified'],
@@ -120,13 +130,14 @@ echo json_encode([
         'posts'             =>        $posts,
         'distance_km'       =>        $distance,
         'discovery_min_age'  => (int)  ($user['discovery_min_age']  ?? 18),
-        'discovery_max_age'  => (int)  ($user['discovery_max_age']  ?? 100),
-        'discovery_min_dist' => (int)  ($user['discovery_min_dist'] ?? 0),
+        'discovery_max_age'  => (int)  ($user['discovery_max_age']  ?? 55),
         'discovery_max_dist' => (int)  ($user['discovery_max_dist'] ?? 50),
-        'global_discovery'   => (bool) ($user['global_discovery']   ?? 0),
+        'discovery_min_dist' => (int)  ($user['discovery_min_dist'] ?? 0),
+        'global_discovery'   => (bool) ($user['global_discovery']   ?? 1),
         'notif_matches'      => (bool) ($user['notif_matches']      ?? 1),
         'notif_messages'     => (bool) ($user['notif_messages']     ?? 1),
         'notif_likes'        => (bool) ($user['notif_likes']        ?? 1),
+        'notif_who_swiped'   => (bool) ($user['notif_who_swiped']   ?? 1),
         'notif_activity'     => (bool) ($user['notif_activity']     ?? 1),
     ],
 ]);

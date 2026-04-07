@@ -11,10 +11,8 @@ if (!function_exists('sendPush')) {
 
 // ── Path to your service account JSON file ────────────────────
 // Place legitdate-d69ce-f98ee630c9c2.json in your dating_api root.
-if (!defined('FCM_PROJECT_ID')) define('FCM_PROJECT_ID', 'legitdate-d69ce');
-if (!defined('FCM_SERVICE_ACCOUNT_PATH')) {
-    define('FCM_SERVICE_ACCOUNT_PATH', dirname(__DIR__) . '/legitdate-d69ce-f98ee630c9c2.json');
-}
+define('FCM_SERVICE_ACCOUNT_PATH', __DIR__ . '/../legitdate-d69ce-f98ee630c9c2.json');
+define('FCM_PROJECT_ID', 'legitdate-d69ce');
 
 // ─────────────────────────────────────────────────────────────
 //  Generate OAuth2 Bearer token from Service Account JSON
@@ -24,19 +22,15 @@ function getFcmAccessToken(): ?string {
     static $cachedToken    = null;
     static $cachedExpiry   = 0;
 
-    // SPEED OPT 3: Try APCu cache first
+    // SPEED OPT 3: Try APCu cache first — survives across PHP requests (~200-400ms saving per swipe)
     if (function_exists('apcu_fetch')) {
         $apcuToken = apcu_fetch('fcm_access_token', $success);
         if ($success && $apcuToken) return $apcuToken;
     }
 
-    // NEW: Disk-based cache for servers without APCu (like basic hosting/XAMPP)
-    $cacheFile = sys_get_temp_dir() . '/fcm_token_cache.json';
-    if (file_exists($cacheFile)) {
-        $cached = json_decode(file_get_contents($cacheFile), true);
-        if ($cached && isset($cached['token']) && time() < $cached['expiry'] - 60) {
-            return $cached['token'];
-        }
+    // Fall back to static variable cache (same request)
+    if ($cachedToken && time() < $cachedExpiry - 60) {
+        return $cachedToken;
     }
 
     if (!file_exists(FCM_SERVICE_ACCOUNT_PATH)) {
@@ -115,16 +109,10 @@ function getFcmAccessToken(): ?string {
     $cachedToken  = $tokenData['access_token'];
     $cachedExpiry = $now + (int)($tokenData['expires_in'] ?? 3600);
 
-    // 1. Store in memory (APCu)
-    if (function_exists('apcu_store')) {
-        apcu_store('fcm_access_token', $cachedToken, 3300);
+    // SPEED OPT 3: Store in APCu with 55-min TTL (token valid 1h, 5-min buffer)
+    if (function_exists('apcu_store') && !empty($tokenData['access_token'])) {
+        apcu_store('fcm_access_token', $tokenData['access_token'], 3300);
     }
-
-    // 2. Store on disk (New)
-    file_put_contents($cacheFile, json_encode([
-        'token'  => $cachedToken,
-        'expiry' => $cachedExpiry
-    ]));
 
     return $cachedToken;
 }
@@ -266,7 +254,7 @@ function sendPush(
             ],
             CURLOPT_POSTFIELDS     => json_encode($message),
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 1, // Reduced to 1s for speed
+            CURLOPT_TIMEOUT        => 3,  // Reduced from 8s
         ]);
 
         $result   = curl_exec($ch);

@@ -33,9 +33,9 @@ $hasCoords   = ($myLat != 0 && $myLng != 0);
 
 $minAge = isset($_GET['min_age']) ? (int)$_GET['min_age'] : 18;
 $maxAge = isset($_GET['max_age']) ? (int)$_GET['max_age'] : 100;
-$minDist = isset($_GET['min_dist']) ? (int)$_GET['min_dist'] : 0;
+$minDist = isset($_GET['min_dist']) ? (int)$_GET['min_dist'] : 1;
 $maxDist = isset($_GET['max_dist']) ? (int)$_GET['max_dist'] : 50;
-$isGlobal = isset($_GET['global_discovery']) ? ($_GET['global_discovery'] === 'true' || $_GET['global_discovery'] === '1') : false;
+$isGlobal = isset($_GET['global_discovery']) ? ($_GET['global_discovery'] === 'true' || $_GET['global_discovery'] === '1') : true;
 
 // 4. Gender Filter (Heterosexual Matchmaking)
 $targetGender = (strtolower($me['gender'] ?? '') === 'woman') ? 'man' : 'woman';
@@ -45,41 +45,38 @@ $poolConditions = "
     u.id != $userId
     AND u.profile_complete = 1 
     AND u.show_in_discovery = 1
-    AND LOWER(u.gender) = '$targetGender'
-    AND u.age >= $minAge AND u.age <= $maxAge
+    AND LOWER(u.gender) = ?
+    AND u.age >= ? AND u.age <= ?
     AND u.id NOT IN (
-        SELECT blocked_user_id FROM blocks WHERE blocker_id = $userId
+        SELECT blocked_user_id FROM blocks WHERE blocker_id = ?
         UNION
-        SELECT blocker_id FROM blocks WHERE blocked_user_id = $userId
+        SELECT blocker_id FROM blocks WHERE blocked_user_id = ?
     )
 ";
 
-// Pagination Setup
-$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
-if ($page < 1) $page = 1;
-$limit = 30;
-$offset = ($page - 1) * $limit;
-
-// 5. Build Discovery Pool
+// Use SQL to fetch a slightly larger candidate set to ensure we get enough people after filtering
 $candidateQuery = "
-    SELECT 
-        u.id, u.full_name, u.age, u.gender, u.bio, u.interests, u.city, u.state, u.country, 
-        u.latitude, u.longitude, u.is_verified, u.elo_score, u.job_title, u.company, u.education,
-        u.lifestyle_drinking, u.lifestyle_smoking, u.lifestyle_workout, u.lifestyle_pets, 
-        u.lifestyle_diet, u.lifestyle_schedule, u.communication_style, u.relationship_goal, u.last_active,
+    SELECT u.id, u.full_name, u.age, u.gender, u.bio, u.interests,
+           u.city, u.latitude, u.longitude, 
+           u.is_verified, u.elo_score, u.last_active, u.job_title, u.company, u.education,
+           u.lifestyle_drinking, u.lifestyle_smoking, u.lifestyle_workout, u.lifestyle_pets,
+           u.lifestyle_diet, u.lifestyle_schedule, u.communication_style, u.relationship_goal,
            COALESCE(
                (SELECT photo_url FROM user_photos WHERE user_id = u.id AND is_dp = 1 LIMIT 1),
                (SELECT photo_url FROM user_photos WHERE user_id = u.id LIMIT 1)
            ) AS dp_url
     FROM users u
-    LEFT JOIN swipes s ON s.swiper_id = $userId AND s.swiped_id = u.id
+    LEFT JOIN swipes s ON s.swiper_id = ? AND s.swiped_id = u.id
     WHERE $poolConditions
       AND (s.id IS NULL OR (s.action = 'dislike' AND s.created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)))
-    ORDER BY u.last_active DESC
-    LIMIT $limit OFFSET $offset
+    LIMIT 2000
 ";
 
-$candidateResult = $db->query($candidateQuery);
+$stmt = $db->prepare($candidateQuery);
+$stmt->bind_param('siiiii', $targetGender, $minAge, $maxAge, $userId, $userId, $userId);
+$stmt->execute();
+$candidateResult = $stmt->get_result();
+$stmt->close();
 if ($candidateResult->num_rows === 0) {
     error_log("DISCOVERY: No candidates found for User ID $userId. Gender: $targetGender, Age: $minAge-$maxAge");
 }
@@ -88,21 +85,14 @@ $candidates = [];
 while ($row = $candidateResult->fetch_assoc()) {
     $scoredItem = runScoring($row, $myLat, $myLng, $myAge, $myInterests, $hasCoords);
     
-    // DISTANCE FILTERING: 
-    // If Global Discovery is ON, focus EXCLUSIVELY on users further than 500km.
-    // If Global Discovery is OFF, stay within the [minDist, maxDist] range.
     if ($hasCoords && !empty($row['latitude'])) {
-        if ($isGlobal) {
-            // "Nationwide Mode": Only show users > 500km away
-            if ($scoredItem['distance_km'] < 500) {
+        if (!$isGlobal) {
+            // Local mode: apply slider bounds
+            if ($scoredItem['distance_km'] < $minDist || $scoredItem['distance_km'] > $maxDist) {
                 continue;
             }
-        } else {
-            // "Local Mode": Stay within the user's slider bounds
-            if ($scoredItem['distance_km'] < $minDist || $scoredItem['distance_km'] > $maxDist) {
-                continue; 
-            }
         }
+        // Global mode: no distance filter — show everyone worldwide
     }
 
     $candidates[] = $scoredItem;
@@ -193,8 +183,6 @@ foreach ($topCandidates as $s) {
         'bio'            => $row['bio'] ?? '',
         'interests'      => !empty($row['interests']) ? (is_array($row['interests']) ? $row['interests'] : explode(',', (string)$row['interests'])) : [],
         'city'           => $row['city'] ?? '',
-        'state'          => $row['state'] ?? '',
-        'country'        => $row['country'] ?? '',
         'latitude'       => (float)($row['latitude'] ?? 0),
         'longitude'      => (float)($row['longitude'] ?? 0),
         'is_verified'    => (bool)($row['is_verified'] ?? 0),

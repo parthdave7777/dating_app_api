@@ -3,7 +3,6 @@ vendor/
 .env.*
 uploads/
 *.log
-*.txt
 .DS_Store
 *.json
 !composer.json

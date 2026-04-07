@@ -122,9 +122,8 @@ if ($action === 'like') {
         $matchStmt->close();
 
         $isMatch = true;
-        // Mutual match notification to both users
+        // Mutual match notification
         sendMatchNotification($db, $userId, $swipedUserId, (int)$matchId);
-        sendMatchNotification($db, $swipedUserId, $userId, (int)$matchId); 
     } else {
         // Just a one-way like
         sendLikeNotification($db, $userId, $swipedUserId);
