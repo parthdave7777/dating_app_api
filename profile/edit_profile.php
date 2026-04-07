@@ -61,6 +61,7 @@ $stmt = $db->prepare("
         company = ?,
         lifestyle_pets = ?,
         lifestyle_smoking = ?,
+        lifestyle_drinking = ?,
         lifestyle_workout = ?,
         lifestyle_diet = ?,
         lifestyle_schedule = ?,
@@ -68,10 +69,10 @@ $stmt = $db->prepare("
         communication_style = ?
     WHERE id = ?
 ");
-$stmt->bind_param('sisssssssssssssi', 
+$stmt->bind_param('sissssssssssssssi', 
     $fullName, $age, $gender, $lookingFor, $bio, $interests, 
     $jobTitle, $company,
-    $pets, $smoking, $workout, $diet, $schedule,
+    $pets, $smoking, $drinking, $workout, $diet, $schedule,
     $goal, $commStyle,
     $userId
 );
