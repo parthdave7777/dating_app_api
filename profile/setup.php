@@ -58,7 +58,6 @@ $stmt = $db->prepare("
         looking_for = ?, 
         bio = ?,
         interests = ?, 
-        height = ?, 
         job_title = ?,
         company = ?, 
         lifestyle_pets = ?, 
@@ -83,9 +82,9 @@ if (!$stmt) {
 }
 
 $stmt->bind_param(
-    'sisssssssssssssssddsi',
+    'sisssssssssssssddsi',
     $fullName, $age, $gender, $lookingFor, $bio,
-    $interests, $height, $jobTitle,
+    $interests, $jobTitle,
     $company, $pets, $drinking, $smoking,
     $workout, $diet, $schedule,
     $relationshipGoal, $commStyle, $latitude,
