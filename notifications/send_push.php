@@ -9,30 +9,40 @@
 
 if (!function_exists('sendPush')) {
 
-// Check both ROOT and local for the JSON file (Render compatibility)
-$possiblePaths = [
-    __DIR__ . '/../legitdate-d69ce-f98ee630c9c2.json',
-    __DIR__ . '/legitdate-d69ce-f98ee630c9c2.json'
-];
-$jsonPath = '';
-foreach ($possiblePaths as $p) {
-    if (file_exists($p)) {
-        $jsonPath = $p;
-        break;
+// Helper to load service account
+function getFcmServiceAccount(): ?array {
+    static $sa = null;
+    if ($sa !== null) return $sa;
+    
+    // Check Env Var
+    $envJson = getenv('FCM_SERVICE_ACCOUNT_JSON');
+    if (!empty($envJson)) {
+        $sa = json_decode($envJson, true);
+        return $sa;
     }
+    
+    // Check File (Render fallback/local)
+    $possiblePaths = [
+        __DIR__ . '/../legitdate-d69ce-f98ee630c9c2.json',
+        __DIR__ . '/legitdate-d69ce-f98ee630c9c2.json'
+    ];
+    foreach ($possiblePaths as $p) {
+        if (file_exists($p)) {
+            $sa = json_decode(file_get_contents($p), true);
+            return $sa;
+        }
+    }
+    return null;
 }
-define('FCM_SERVICE_ACCOUNT_PATH', $jsonPath);
 
 // ─────────────────────────────────────────────────────────────
-//  Generate OAuth2 Bearer token from Service Account JSON
+//  Generate OAuth2 Bearer token
 // ─────────────────────────────────────────────────────────────
 function getFcmAccessToken(): ?string {
     static $cachedToken    = null;
     static $cachedExpiry   = 0;
     
-    // Read Project ID from JSON dynamically
-    if (!file_exists(FCM_SERVICE_ACCOUNT_PATH)) return null;
-    $sa = json_decode(file_get_contents(FCM_SERVICE_ACCOUNT_PATH), true);
+    $sa = getFcmServiceAccount();
     if (!$sa) return null;
     $projectId = $sa['project_id'] ?? '';
 
@@ -207,10 +217,10 @@ function sendPush(
     $isTimeSensitive = in_array($type, ['like', 'superlike', 'match', 'incoming_call']);
 
     // Get project ID dynamically for the URL
-    $sa = json_decode(file_get_contents(FCM_SERVICE_ACCOUNT_PATH), true);
+    $sa = getFcmServiceAccount();
     $projectId = $sa['project_id'] ?? '';
     if (!$projectId) {
-        error_log('[FCM] No project_id found in JSON — push skipped');
+        error_log('[FCM] No project_id found in JSON or EnvVar — push skipped');
         return;
     }
 

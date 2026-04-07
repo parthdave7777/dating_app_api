@@ -11,12 +11,17 @@ $userId = 1; // Testing User 1
 
 echo "<h3>FCM Diagnostic Tool (Root Version)</h3>";
 
-// 1. Check Service Account File
-echo "Checking service account JSON... ";
-if (file_exists(FCM_SERVICE_ACCOUNT_PATH)) {
-    echo "<b style='color:green'>Found!</b><br>";
+// 1. Check Service Account Status
+echo "Checking credentials... ";
+$sa = getFcmServiceAccount();
+$envJson = getenv('FCM_SERVICE_ACCOUNT_JSON');
+
+if (!empty($envJson)) {
+    echo "<b style='color:green'>Found in Environment Variables!</b> ✅<br>";
+} elseif ($sa) {
+    echo "<b style='color:green'>Found in local File!</b> ✅<br>";
 } else {
-    echo "<b style='color:red'>NOT FOUND!</b> Path looked at: " . FCM_SERVICE_ACCOUNT_PATH . "<br>";
+    echo "<b style='color:red'>NOT FOUND!</b> No JSON file found AND no FCM_SERVICE_ACCOUNT_JSON environment variable detected on Render.<br>";
 }
 
 // 2. Try to get Access Token

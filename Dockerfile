@@ -1,32 +1,20 @@
+# Use official PHP Apache image
 FROM php:8.2-apache
 
-# Install dependencies for standard PHP projects
-RUN apt-get update && apt-get install -y \
-    libmariadb-dev \
-    libonig-dev \
-    libzip-dev \
-    zip \
-    unzip \
-    git \
- && rm -rf /var/lib/apt/lists/*
+# Install MySQL extensions
+RUN docker-php-ext-install mysqli pdo pdo_mysql
 
-# Install PHP extensions
-RUN docker-php-ext-install mysqli mbstring pdo pdo_mysql zip
+# Enable Apache Mod Rewrite (important for some PHP logic)
+RUN a2enmod rewrite
 
-# Enable Apache mod_rewrite and mod_headers
-RUN a2enmod rewrite headers
+# Update Apache config to allow .htaccess
+RUN sed -i '/<Directory \/var\/www\/>/,/<\/Directory>/ s/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf
 
-# Set the working directory
-WORKDIR /var/www/html
+# Copy all files to the server
+COPY . /var/www/html/
 
-# Copy your source code into the container
-COPY . .
-
-# Set permissions for Apache
+# Set correct permissions
 RUN chown -R www-data:www-data /var/www/html
-
-# Expose port 80
-EXPOSE 80
 
 # Start Apache
 CMD ["apache2-foreground"]
