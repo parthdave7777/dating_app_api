@@ -12,15 +12,19 @@ if (!function_exists('sendPush')) {
 // ── Path to your service account JSON file ────────────────────
 // Place legitdate-d69ce-f98ee630c9c2.json in your dating_api root.
 define('FCM_SERVICE_ACCOUNT_PATH', __DIR__ . '/../legitdate-d69ce-f98ee630c9c2.json');
-define('FCM_PROJECT_ID', 'legitdate-d69ce');
 
 // ─────────────────────────────────────────────────────────────
 //  Generate OAuth2 Bearer token from Service Account JSON
-//  Pure PHP — no Composer / Firebase Admin SDK needed.
 // ─────────────────────────────────────────────────────────────
 function getFcmAccessToken(): ?string {
     static $cachedToken    = null;
     static $cachedExpiry   = 0;
+    
+    // Read Project ID from JSON dynamically
+    if (!file_exists(FCM_SERVICE_ACCOUNT_PATH)) return null;
+    $sa = json_decode(file_get_contents(FCM_SERVICE_ACCOUNT_PATH), true);
+    if (!$sa) return null;
+    $projectId = $sa['project_id'] ?? '';
 
     // SPEED OPT 3: Try APCu cache first — survives across PHP requests (~200-400ms saving per swipe)
     if (function_exists('apcu_fetch')) {
@@ -192,6 +196,14 @@ function sendPush(
     // SPEED OPT 2: Shorter TTL for time-sensitive events so FCM won't redeliver stale pushes
     $isTimeSensitive = in_array($type, ['like', 'superlike', 'match', 'incoming_call']);
 
+    // Get project ID dynamically for the URL
+    $sa = json_decode(file_get_contents(FCM_SERVICE_ACCOUNT_PATH), true);
+    $projectId = $sa['project_id'] ?? '';
+    if (!$projectId) {
+        error_log('[FCM] No project_id found in JSON — push skipped');
+        return;
+    }
+
     // BUG FIX: Use data-only messages (no 'notification' block) for ALL types
     // so the Flutter app always handles them — this prevents the OS from
     // showing duplicate notifications AND stops foreground-suppression issues.
@@ -224,7 +236,7 @@ function sendPush(
         ],
     ];
 
-    $url = 'https://fcm.googleapis.com/v1/projects/' . FCM_PROJECT_ID . '/messages:send';
+    $url = 'https://fcm.googleapis.com/v1/projects/' . $projectId . '/messages:send';
 
     // SPEED OPT 6: Fire FCM push asynchronously so swipe.php responds instantly.
     // BUG FIX: On Windows XAMPP, exec() with Linux shell syntax (> /dev/null) fails.

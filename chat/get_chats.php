@@ -68,21 +68,23 @@ foreach ($rows as $row) {
     $isMine     = ($lastSender === $userId);
 
     $previewTimeStr = $row['last_message_time'] ? date('H:i', strtotime($row['last_message_time'])) : '';
+    $otherName      = (isset($other['full_name']) && $other['full_name'] != '') ? $other['full_name'] : 'User';
 
     if ($lastType === 'call_missed') {
-        $text = "📵 Missed call at $previewTimeStr";
-        $preview = $isMine ? 'You: ' . $text : $text;
+        $text = "Missed call at $previewTimeStr";
+        // If IS NOT mine, it means I received it and missed it.
+        $preview = $isMine ? '📵 Outgoing call missed' : "📵 Missed call from $otherName at $previewTimeStr";
     } elseif ($lastType === 'call_ended' || $lastType === 'call_event') {
-        $text = "📹 Video call";
-        $preview = $isMine ? 'You: ' . $text : $text;
+        $text = "Video call";
+        $preview = $isMine ? '📹 You: ' . $text : '📹 ' . $text;
     } elseif ($isDeleted) {
-        $preview = $isMine ? 'You: This message was deleted' : 'This message was deleted';
+        $preview = $isMine ? 'You deleted a message' : 'Message deleted';
     } elseif (strpos($lastType, 'image') !== false) {
-        $text = (strpos($lastType, 'opened') !== false) ? '📷 Photo opened' : '📷 New photo';
-        $preview = $isMine ? 'You: ' . $text : $text;
+        $text = (strpos($lastType, 'opened') !== false) ? 'Photo opened' : 'Sent a photo';
+        $preview = $isMine ? '📷 You: ' . $text : '📷 ' . $text;
     } elseif (strpos($lastType, 'video') !== false) {
-        $text = (strpos($lastType, 'opened') !== false) ? '🎥 Video opened' : '🎥 New video';
-        $preview = $isMine ? 'You: ' . $text : $text;
+        $text = (strpos($lastType, 'opened') !== false) ? 'Video opened' : 'Sent a video';
+        $preview = $isMine ? '🎥 You: ' . $text : '🎥 ' . $text;
     } elseif (empty($row['last_message'])) {
         $preview = 'New match 🎉';
     } else {
