@@ -37,6 +37,7 @@ $education   = trim($body['education']    ?? '');
 $height      = trim($body['height']       ?? '');
 $pets        = trim($body['lifestyle_pets']    ?? '');
 $smoking     = trim($body['lifestyle_smoking'] ?? '');
+$drinking    = trim($body['lifestyle_drinking'] ?? '');
 $workout     = trim($body['lifestyle_workout'] ?? '');
 $diet        = trim($body['lifestyle_diet']    ?? '');
 $schedule    = trim($body['lifestyle_schedule'] ?? '');
