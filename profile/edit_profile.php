@@ -37,7 +37,6 @@ $education   = trim($body['education']    ?? '');
 $height      = trim($body['height']       ?? '');
 $pets        = trim($body['lifestyle_pets']    ?? '');
 $smoking     = trim($body['lifestyle_smoking'] ?? '');
-$drinking    = trim($body['lifestyle_drinking'] ?? '');
 $workout     = trim($body['lifestyle_workout'] ?? '');
 $diet        = trim($body['lifestyle_diet']    ?? '');
 $schedule    = trim($body['lifestyle_schedule'] ?? '');
@@ -60,9 +59,10 @@ $stmt = $db->prepare("
         interests = ?,
         job_title = ?,
         company = ?,
+        education = ?,
+        height = ?,
         lifestyle_pets = ?,
         lifestyle_smoking = ?,
-        lifestyle_drinking = ?,
         lifestyle_workout = ?,
         lifestyle_diet = ?,
         lifestyle_schedule = ?,
@@ -70,10 +70,10 @@ $stmt = $db->prepare("
         communication_style = ?
     WHERE id = ?
 ");
-$stmt->bind_param('sissssssssssssssi', 
+$stmt->bind_param('sisssssssssssssssi', 
     $fullName, $age, $gender, $lookingFor, $bio, $interests, 
-    $jobTitle, $company,
-    $pets, $smoking, $drinking, $workout, $diet, $schedule,
+    $jobTitle, $company, $education, $height,
+    $pets, $smoking, $workout, $diet, $schedule,
     $goal, $commStyle,
     $userId
 );

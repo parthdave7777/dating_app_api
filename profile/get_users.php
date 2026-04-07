@@ -8,6 +8,9 @@ $db = getDB();
 // 1. Activity Pulse
 $db->query("UPDATE users SET last_active = NOW() WHERE id = $userId");
 
+// 2. Clear Expired Boosts
+$db->query("UPDATE users SET is_new_user_boost = 0 WHERE new_user_boost_expires < NOW() AND is_new_user_boost = 1");
+
 // 3. Fetch Current User Details
 $meStmt = $db->prepare("SELECT age, gender, latitude, longitude, interests, city FROM users WHERE id = ?");
 $meStmt->bind_param('i', $userId);
