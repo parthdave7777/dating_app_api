@@ -13,14 +13,14 @@ $fcmToken = trim($body['fcm_token'] ?? '');
 // 1. Log Attempt (Always)
 $rawToken = substr($fcmToken, 0, 15);
 $logEntry = date('Y-m-d H:i:s') . " - Attempting sync - Token Start: $rawToken...\n";
-file_put_contents(__DIR__ . '/fcm_log.txt', $logEntry, FILE_APPEND);
+@file_put_contents(__DIR__ . '/fcm_log.txt', $logEntry, FILE_APPEND);
 
 // 2. Auth Check
 $userId   = getAuthUserId();
 
 // 3. Log SUCCESS (Only if auth passes)
 $successEntry = date('Y-m-d H:i:s') . " - SUCCESS - UserID: $userId - Token: " . substr($fcmToken, 0, 20) . "...\n";
-file_put_contents(__DIR__ . '/fcm_log.txt', $successEntry, FILE_APPEND);
+@file_put_contents(__DIR__ . '/fcm_log.txt', $successEntry, FILE_APPEND);
 
 if (empty($fcmToken)) {
     echo json_encode(['status' => 'error', 'message' => 'fcm_token required']);
