@@ -4,8 +4,8 @@ FROM php:8.2-apache
 # Install MySQL extensions
 RUN docker-php-ext-install mysqli pdo pdo_mysql
 
-# Enable Apache Mod Rewrite (important for some PHP logic)
-RUN a2enmod rewrite
+# Enable Apache Mod Rewrite & Headers (important for your .htaccess logic)
+RUN a2enmod rewrite headers
 
 # Update Apache config to allow .htaccess
 RUN sed -i '/<Directory \/var\/www\/>/,/<\/Directory>/ s/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf

@@ -67,7 +67,7 @@ if (APP_ENV === 'local') {
     define('CLOUDINARY_CLOUD_NAME', getenv('CLOUDINARY_CLOUD_NAME') ?: '');
     define('CLOUDINARY_API_KEY',    getenv('CLOUDINARY_API_KEY')    ?: '');
     define('CLOUDINARY_API_SECRET', getenv('CLOUDINARY_API_SECRET') ?: '');
-    define('FCM_PROJECT_ID', 'legitdate-d69ce');
+    define('FCM_PROJECT_ID', getenv('FCM_PROJECT_ID') ?: '');
 }
 
 function getDB(): mysqli {
