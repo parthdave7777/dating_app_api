@@ -26,9 +26,9 @@ $matchId  = (int) ($input['match_id'] ?? 0);
 $event    = trim($input['event'] ?? '');
 $duration = isset($input['duration']) ? (int) $input['duration'] : null;
 
-$validEvents = ['call_started', 'call_ended', 'call_missed', 'call_declined'];
+$validEvents = ['call_started', 'call_ringing', 'call_ended', 'call_missed', 'call_declined'];
 if ($matchId <= 0 || !in_array($event, $validEvents, true)) {
-    echo json_encode(['status' => 'error', 'message' => 'Invalid parameters']);
+    echo json_encode(['status' => 'error', 'message' => 'Invalid parameters: ' . $event]);
     exit();
 }
 
