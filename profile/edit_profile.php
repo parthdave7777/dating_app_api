@@ -35,7 +35,7 @@ $jobTitle    = trim($body['job_title']    ?? '');
 $company     = trim($body['company']      ?? '');
 $education   = trim($body['education']    ?? '');
 $height      = trim($body['height']       ?? '');
-$pets        = trim($body['lifestyle_pets']    ?? '');
+$drinking    = trim($body['lifestyle_drinking'] ?? '');
 $smoking     = trim($body['lifestyle_smoking'] ?? '');
 $workout     = trim($body['lifestyle_workout'] ?? '');
 $diet        = trim($body['lifestyle_diet']    ?? '');
@@ -62,6 +62,7 @@ $stmt = $db->prepare("
         education = ?,
         height = ?,
         lifestyle_pets = ?,
+        lifestyle_drinking = ?,
         lifestyle_smoking = ?,
         lifestyle_workout = ?,
         lifestyle_diet = ?,
@@ -70,15 +71,25 @@ $stmt = $db->prepare("
         communication_style = ?
     WHERE id = ?
 ");
-$stmt->bind_param('sisssssssssssssssi', 
+
+if (!$stmt) {
+    echo json_encode(['status' => 'error', 'message' => 'Prepare failed: ' . $db->error]);
+    exit();
+}
+
+$stmt->bind_param('sissssssssssssssssi', 
     $fullName, $age, $gender, $lookingFor, $bio, $interests, 
     $jobTitle, $company, $education, $height,
-    $pets, $smoking, $workout, $diet, $schedule,
+    $pets, $drinking, $smoking, $workout, $diet, $schedule,
     $goal, $commStyle,
     $userId
 );
-$stmt->execute();
+
+if ($stmt->execute()) {
+    echo json_encode(['status' => 'success', 'message' => 'Profile updated']);
+} else {
+    echo json_encode(['status' => 'error', 'message' => 'Update failed: ' . $stmt->error]);
+}
+
 $stmt->close();
 $db->close();
-
-echo json_encode(['status' => 'success', 'message' => 'Profile updated']);
