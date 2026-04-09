@@ -1,56 +1,67 @@
 <?php
+// seed_users.php
 require_once __DIR__ . '/config.php';
+set_time_limit(0); 
+ob_implicit_flush(true);
+if (ob_get_level()) ob_end_clean();
+
 $db = getDB();
 
-// Increase execution time for 300 users
-set_time_limit(300);
+$names = ["Emma", "Liam", "Olivia", "Noah", "Ava", "Ethan", "Sophia", "Lucas", "Mia", "Mason", 
+          "Isabella", "Logan", "Amelia", "James", "Harper", "Sebastian", "Evelyn", "Alexander", "Abigail", "Caleb"];
+$bios = ["Love traveling and coffee.", "Avid hiker and dog lover.", "Music is my life.", "Foodie searching for the best tacos.", 
+         "Tech enthusiast and gamer.", "Yoga and mindfulness.", "Looking for something real.", "Casual vibes only."];
+$interests = ["Music", "Travel", "Cooking", "Gaming", "Yoga", "Hiking", "Photography", "Movies", "Reading", "Dancing"];
 
-$usersFile = 'c:/Users/dpart/Desktop/date/users.csv';
-$photosFile = 'c:/Users/dpart/Desktop/date/user_photos.csv';
+echo "<h1>Seeding 500 Users... Please wait.</h1>";
+// Buffer Buster: browsers wait for 1KB-4KB before rendering anything
+echo str_repeat(" ", 4096); 
+echo "<div id='progress' style='font-family: monospace; line-height: 1.5;'>";
 
-if (!file_exists($usersFile)) {
-    die(json_encode(['status'=>'error', 'message'=>'users.csv not found at ' . $usersFile]));
+for ($i = 1; $i <= 500; $i++) {
+    if ($i % 10 == 0) {
+        echo "Adding User $i...<br>";
+        @flush();
+    }
+    
+    $gender = ($i % 2 == 0) ? 'woman' : 'man';
+    $target = ($gender == 'woman') ? 'man' : 'woman';
+    $name = $names[array_rand($names)] . " " . $i;
+    $age = rand(18, 45);
+    $bio = $bios[array_rand($bios)];
+    $userInterests = implode(',', array_slice($interests, 0, rand(3, 6)));
+    
+    // Scattered around a center point (e.g., San Francisco for demo)
+    $lat = 37.7749 + (rand(-1000, 1000) / 10000.0);
+    $lon = -122.4194 + (rand(-1000, 1000) / 10000.0);
+    
+    $stmt = $db->prepare("INSERT INTO users (full_name, age, gender, looking_for, bio, interests, latitude, longitude, setup_completed, profile_complete) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 1)");
+    $stmt->bind_param("sissssdd", $name, $age, $gender, $target, $bio, $userInterests, $lat, $lon);
+    
+    if ($stmt->execute()) {
+        $userId = $stmt->insert_id;
+        
+        // Add 2 photos for each user
+        // Using Picsum seed to ensure different faces
+        $photo1 = "https://picsum.photos/seed/u{$userId}a/600/800";
+        $photo2 = "https://picsum.photos/seed/u{$userId}b/600/800";
+        
+        // Match column name to 'photo_url' as seen in get_profile.php
+        $q1 = "INSERT INTO user_photos (user_id, photo_url, is_dp) VALUES ($userId, '$photo1', 1)";
+        $q2 = "INSERT INTO user_photos (user_id, photo_url, is_dp) VALUES ($userId, '$photo2', 0)";
+        
+        if (!$db->query($q1)) echo "ERROR P1: " . $db->error . "<br>";
+        if (!$db->query($q2)) echo "ERROR P2: " . $db->error . "<br>";
+        
+        // Also update the main dp_url in users table for fast discovery loading
+        $db->query("UPDATE users SET dp_url = '$photo1' WHERE id = $userId");
+    } else {
+        echo "<span style='color:red;'>FAILED USER $i: " . $db->error . "</span><br>";
+        @flush();
+    }
 }
 
-echo "--- STARTING SEEDING ---\n";
-
-// 1. Clear existing test data if needed (OPTIONAL - COMMENT OUT IF NOT WANTED)
-// $db->query("DELETE FROM user_photos WHERE user_id > 10");
-// $db->query("DELETE FROM users WHERE id > 10");
-
-// 2. Load Users
-$handle = fopen($usersFile, "r");
-$header = fgetcsv($handle); // Skip header
-
-$count = 0;
-while (($data = fgetcsv($handle)) !== FALSE) {
-    // [id, full_name, email, password, gender, dob, bio, hobbies, height, lat, lng, is_active, is_verified, fcm_token]
-    $stmt = $db->prepare("INSERT IGNORE INTO users (id, full_name, email, password, gender, dob, bio, hobbies, height, lat, lng, is_active, is_verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    $hashedPass = password_hash($data[3], PASSWORD_DEFAULT);
-    $stmt->bind_param("issssssssddii", 
-        $data[0], $data[1], $data[2], $hashedPass, $data[4], $data[5], $data[6], $data[7], $data[8], $data[9], $data[10], $data[11], $data[12]
-    );
-    if ($stmt->execute()) $count++;
-    $stmt->close();
-}
-fclose($handle);
-echo "Imported $count users.\n";
-
-// 3. Load Photos
-$handle = fopen($photosFile, "r");
-$header = fgetcsv($handle); // Skip header
-
-$pCount = 0;
-while (($data = fgetcsv($handle)) !== FALSE) {
-    // [id, user_id, photo_url, is_dp]
-    $stmt = $db->prepare("INSERT IGNORE INTO user_photos (id, user_id, photo_url, is_dp) VALUES (?, ?, ?, ?)");
-    $stmt->bind_param("iisi", $data[0], $data[1], $data[2], $data[3]);
-    if ($stmt->execute()) $pCount++;
-    $stmt->close();
-}
-fclose($handle);
-echo "Imported $pCount photos.\n";
-
-echo "--- SEEDING COMPLETE ---";
-$db->close();
+echo "</div>";
+echo "<h2>DONE! 500 users added with 1000 photos.</h2>";
+echo "<p>Go back to your app and swipe away!</p>";
 ?>
