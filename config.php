@@ -53,7 +53,11 @@ if (APP_ENV === 'local') {
     // ── Leave the FCM_SERVICE_ACCOUNT_PATH as-is; FCM sends to real devices
     // ── even from localhost as long as you have internet access
     define('FCM_PROJECT_ID', 'legitdate-d69ce');
-
+    
+    // ── AGORA VIDEO CALLS ────────────────────────────────────
+    define('AGORA_APP_ID',   '093e7f655f564c7ca14acbcdce68f390');
+    define('AGORA_APP_CERT', '11c4d01441fd4c19aacd5bf2f867e945');
+    
 } else {
     // ── PRODUCTION (Aiven MySQL + Render) ───────────────────
     define('DB_HOST', getenv('DB_HOST') ?: '');
@@ -68,6 +72,10 @@ if (APP_ENV === 'local') {
     define('CLOUDINARY_API_KEY',    getenv('CLOUDINARY_API_KEY')    ?: '');
     define('CLOUDINARY_API_SECRET', getenv('CLOUDINARY_API_SECRET') ?: '');
     define('FCM_PROJECT_ID', getenv('FCM_PROJECT_ID') ?: '');
+
+    // ── AGORA VIDEO CALLS ────────────────────────────────────
+    define('AGORA_APP_ID',   getenv('AGORA_APP_ID')   ?: '093e7f655f564c7ca14acbcdce68f390');
+    define('AGORA_APP_CERT', getenv('AGORA_APP_CERT') ?: '11c4d01441fd4c19aacd5bf2f867e945');
 }
 
 function getDB(): mysqli {

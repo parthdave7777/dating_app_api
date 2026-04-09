@@ -46,10 +46,22 @@ function getFcmAccessToken(): ?string {
     if (!$sa) return null;
     $projectId = $sa['project_id'] ?? '';
 
-    // SPEED OPT 3: Try APCu cache first — survives across PHP requests (~200-400ms saving per swipe)
+    // SPEED OPT 3: Try APCu cache first (~200ms saving)
     if (function_exists('apcu_fetch')) {
         $apcuToken = apcu_fetch('fcm_access_token', $success);
         if ($success && $apcuToken) return $apcuToken;
+    }
+
+    // SPEED OPT 4: File-based fallback cache if APCu is missing (Common on XAMPP)
+    $cacheDir  = __DIR__ . '/../cache';
+    $cacheFile = $cacheDir . '/fcm_token.json';
+    if (!is_dir($cacheDir)) @mkdir($cacheDir, 0777, true);
+
+    if (file_exists($cacheFile)) {
+        $fCache = json_decode(file_get_contents($cacheFile), true);
+        if ($fCache && ($fCache['expiry'] ?? 0) > time() + 60) {
+            return $fCache['token'];
+        }
     }
 
     // Fall back to static variable cache (same request)
@@ -133,10 +145,16 @@ function getFcmAccessToken(): ?string {
     $cachedToken  = $tokenData['access_token'];
     $cachedExpiry = $now + (int)($tokenData['expires_in'] ?? 3600);
 
-    // SPEED OPT 3: Store in APCu with 55-min TTL (token valid 1h, 5-min buffer)
+    // SPEED OPT 3: Store in APCu
     if (function_exists('apcu_store') && !empty($tokenData['access_token'])) {
         apcu_store('fcm_access_token', $tokenData['access_token'], 3300);
     }
+
+    // SPEED OPT 4: Store in file cache
+    @file_put_contents($cacheFile, json_encode([
+        'token'  => $cachedToken,
+        'expiry' => $cachedExpiry
+    ]));
 
     return $cachedToken;
 }

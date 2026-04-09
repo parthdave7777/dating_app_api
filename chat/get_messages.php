@@ -314,7 +314,8 @@ function buildMessageArray($result): array {
 function getOtherUser(mysqli $db, int $otherId): array {
     $stmt = $db->prepare("
         SELECT id, full_name,
-               (SELECT photo_url FROM user_photos WHERE user_id = u.id AND is_dp = 1 LIMIT 1) as photo
+               (SELECT photo_url FROM user_photos WHERE user_id = u.id AND is_dp = 1 LIMIT 1) as photo,
+               (CASE WHEN u.updated_at >= DATE_SUB(NOW(), INTERVAL 5 MINUTE) THEN 1 ELSE 0 END) AS is_online
         FROM users u WHERE id = ?
     ");
     $stmt->bind_param('i', $otherId);
@@ -331,5 +332,6 @@ function getOtherUser(mysqli $db, int $otherId): array {
         'photo_url'  =>       $photo,
         'photo'     =>       $photo,
         'dp_url'    =>       $photo,
+        'is_online' => (bool) ($row['is_online'] ?? false),
     ];
 }
