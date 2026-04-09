@@ -1,5 +1,5 @@
 <?php
-require_once 'c:/xampp/htdocs/dating_api/config.php';
+require_once __DIR__ . '/config.php';
 $db = getDB();
 
 echo "--- USERS ---\n";
