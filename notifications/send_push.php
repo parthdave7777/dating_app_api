@@ -69,14 +69,8 @@ function getFcmAccessToken(): ?string {
         return $cachedToken;
     }
 
-    if (!file_exists(FCM_SERVICE_ACCOUNT_PATH)) {
-        error_log('[FCM] Service account file not found: ' . FCM_SERVICE_ACCOUNT_PATH);
-        return null;
-    }
-
-    $sa = json_decode(file_get_contents(FCM_SERVICE_ACCOUNT_PATH), true);
     if (!$sa || empty($sa['private_key']) || empty($sa['client_email'])) {
-        error_log('[FCM] Invalid service account JSON');
+        error_log('[FCM] Invalid service account JSON data');
         return null;
     }
 
