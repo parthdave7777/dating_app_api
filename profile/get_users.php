@@ -92,7 +92,7 @@ if ($candidateResult->num_rows === 0) {
 
 $candidates = [];
 while ($row = $candidateResult->fetch_assoc()) {
-    $scoredItem = runScoring($row, $myLat, $myLng, $myAge, $myInterests, $hasCoords);
+    $scoredItem = runScoring($row, $myLat, $myLng, $myAge, $myInterests, $hasCoords, $isGlobal);
     
     if ($hasCoords && !empty($row['latitude'])) {
         if (!$isGlobal) {
@@ -115,17 +115,29 @@ usort($candidates, function($a, $b) {
 $scored = $candidates; // Alias for compatibility with rest of script
 
 // 6. Scoring Function (The "Radial Expansion" Engine)
-function runScoring($row, $myLat, $myLng, $myAge, $myInterests, $hasCoords): array {
+function runScoring($row, $myLat, $myLng, $myAge, $myInterests, $hasCoords, $isGlobal): array {
     $totalScore = 10000000; // Base Score
     $distanceKm = 0.0;
 
-    // --- PRIMARY FACTOR: Radial Distance (-5000 per KM) ---
-    // Note: We use a larger multiplier if needed to ensure 2km > 20km override
+    // --- PRIMARY FACTOR: Radial Distance ---
     if ($hasCoords && !empty($row['latitude']) && !empty($row['longitude'])) {
         $distanceKm = haversineKm($myLat, $myLng, (float)$row['latitude'], (float)$row['longitude']);
-        // ULTIMATE PROXIMITY RANKING: Someone 2km away ALWAYS beats someone 10km away.
-        // 1,000,000 penalty per KM ensures distance is the absolute king of discovery.
-        $totalScore -= ($distanceKm * 1000000); 
+        
+        if ($isGlobal) {
+            if ($distanceKm > 500) {
+                // GLOBAL BONUS: If they are far away (>500km), give them a massive lead
+                // Instead of subtracting, we add a huge bonus for the "Discovery" feel
+                $totalScore += 20000000; 
+            } else {
+                // In Global mode, near users aren't penalized as heavily, 
+                // but far ones (>500km) will still sit above them.
+                $totalScore -= ($distanceKm * 1000); 
+            }
+        } else {
+            // ULTIMATE PROXIMITY RANKING (Local Mode): Someone 2km away ALWAYS beats someone 10km away.
+            // 1,000,000 penalty per KM ensures distance is the absolute king of discovery.
+            $totalScore -= ($distanceKm * 1000000); 
+        }
     } else {
         $totalScore -= 15000000; // Even bigger penalty for no location
     }
