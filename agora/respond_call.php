@@ -17,8 +17,6 @@ require_once __DIR__ . '/Util.php';
 require_once __DIR__ . '/AccessToken2.php';
 require_once __DIR__ . '/RtcTokenBuilder2.php';
 
-if (!defined('AGORA_APP_ID'))   define('AGORA_APP_ID',   '');
-if (!defined('AGORA_APP_CERT')) define('AGORA_APP_CERT', '');
 if (!defined('TOKEN_EXPIRY'))   define('TOKEN_EXPIRY',   3600);
 
 // ── Auth ─────────────────────────────────────────────────────
