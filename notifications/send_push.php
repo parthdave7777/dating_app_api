@@ -227,10 +227,15 @@ function sendPush(
     }
 
     // ── All data values must be strings for FCM data messages ─
+    $displayBody = $body;
+    if ($type === 'message') {
+        $displayBody = 'Sent you a message';
+    }
+
     $stringData = array_map('strval', array_merge($data, [
         'type'  => $type,
         'title' => $title,
-        'body'  => $body
+        'body'  => $displayBody
     ]));
 
     // ── Build FCM HTTP v1 payload ─────────────────────────────
