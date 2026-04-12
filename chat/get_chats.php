@@ -81,15 +81,15 @@ foreach ($rows as $row) {
         $preview = $isMine ? 'You deleted a message' : 'Message deleted';
     } elseif (strpos($lastType, 'image') !== false) {
         $text = (strpos($lastType, 'opened') !== false) ? 'Photo opened' : 'Sent a photo';
-        $preview = $isMine ? '📷 You: ' . $text : '📷 ' . $text;
+        $preview = $isMine ? '📷 You: ' . $text : '📷 ' . $otherName . ': ' . $text;
     } elseif (strpos($lastType, 'video') !== false) {
         $text = (strpos($lastType, 'opened') !== false) ? 'Video opened' : 'Sent a video';
-        $preview = $isMine ? '🎥 You: ' . $text : '🎥 ' . $text;
+        $preview = $isMine ? '🎥 You: ' . $text : '🎥 ' . $otherName . ': ' . $text;
     } elseif (empty($row['last_message'])) {
         $preview = 'New match 🎉';
     } else {
         $text    = $row['last_message'];
-        $preview = $isMine ? 'You: ' . $text : $text;
+        $preview = $isMine ? 'You: ' . $text : $otherName . ': ' . $text;
         if (mb_strlen($preview) > 55) {
             $preview = mb_substr($preview, 0, 52) . '...';
         }
