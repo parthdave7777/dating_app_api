@@ -44,7 +44,8 @@ $stmt = $db->prepare("
            lifestyle_diet, lifestyle_schedule, communication_style, relationship_goal,
            latitude, longitude, city, is_verified, profile_complete, setup_completed,
            discovery_min_age, discovery_max_age, discovery_max_dist, discovery_min_dist, global_discovery,
-           notif_matches, notif_messages, notif_likes, notif_who_swiped, notif_activity
+           notif_matches, notif_messages, notif_likes, notif_who_swiped, notif_activity,
+           credits
     FROM users WHERE id = ?
 ");
 $stmt->bind_param('i', $targetId);
@@ -180,6 +181,7 @@ echo json_encode([
         'notif_likes'        => (bool) ($user['notif_likes']        ?? 1),
         'notif_who_swiped'   => (bool) ($user['notif_who_swiped']   ?? 1),
         'notif_activity'     => (bool) ($user['notif_activity']     ?? 1),
+        'credits'            => (int)  ($user['credits']            ?? 0),
     ],
 ]);
 

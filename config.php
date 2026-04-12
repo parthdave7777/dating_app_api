@@ -140,36 +140,81 @@ function verifyToken(string $token): ?int {
 }
 
 // ─── GET AUTHENTICATED USER ───────────────────────────────────
+// ─── CREDIT SYSTEM CONFIGURATION ─────────────────────────────
+define('CREDIT_COST_LIKE',        2);
+define('CREDIT_COST_SUPERLIKE',  10);
+define('CREDIT_COST_COMPLIMENT', 25);
+define('CREDIT_COST_REWIND',      5);
+define('CREDIT_COST_VIEW_SECRET', 50); // Viewing who liked/viewed you
+define('CREDIT_COST_CALL_MIN',   20); // Per minute
+define('DAILY_FREE_CREDITS',    100);
+
 function getAuthUserId(): int {
     $authHeader = $_SERVER['HTTP_AUTHORIZATION']
                ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION']
                ?? '';
     
-    // DEBUG AUTH: See if the phone is actually sending the token correctly
-    if (isset($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], 'update_token.php') !== false) {
-        $cleanHeader = substr($authHeader, 0, 15);
-        $headerLog = date('Y-m-d H:i:s') . " - DEBUG AUTH: Header Start: " . ($cleanHeader ?: "EMPTY") . "...\n";
-        file_put_contents(__DIR__ . '/notifications/fcm_log.txt', $headerLog, FILE_APPEND);
-    }
-
+    $userId = 0;
     if (preg_match('/Bearer\s+(.+)/i', $authHeader, $m)) {
         $userId = verifyToken(trim($m[1]));
-        if ($userId) return $userId;
-    }
-
-    $body = json_decode(file_get_contents('php://input'), true) ?? [];
-    if (!empty($body['token'])) {
+    } elseif (!empty($body = json_decode(file_get_contents('php://input'), true)) && !empty($body['token'])) {
         $userId = verifyToken($body['token']);
-        if ($userId) return $userId;
+    } elseif (!empty($_GET['token'])) {
+        $userId = verifyToken($_GET['token']);
     }
 
-    if (!empty($_GET['token'])) {
-        $userId = verifyToken($_GET['token']);
-        if ($userId) return $userId;
+    if ($userId) {
+        // Auto-Refresh Credits if more than 24h passed
+        $db = getDB();
+        $stmt = $db->prepare("SELECT last_credit_refresh FROM users WHERE id = ?");
+        $stmt->bind_param('i', $userId);
+        $stmt->execute();
+        $last = $stmt->get_result()->fetch_assoc()['last_credit_refresh'] ?? null;
+        $stmt->close();
+        
+        if ($last) {
+            $lastTime = strtotime($last);
+            if (time() - $lastTime > 86400) { // 24 hours
+                $db->query("UPDATE users SET credits = GREATEST(credits, " . DAILY_FREE_CREDITS . "), last_credit_refresh = NOW() WHERE id = $userId");
+                $db->query("INSERT INTO credit_logs (user_id, amount, reason) VALUES ($userId, " . DAILY_FREE_CREDITS . ", 'Daily refresh')");
+            }
+        }
+        return $userId;
     }
 
     http_response_code(401);
     die(json_encode(['status' => 'error', 'message' => 'Unauthorized']));
+}
+
+function getUserCredits(mysqli $db, int $userId): int {
+    $stmt = $db->prepare("SELECT credits FROM users WHERE id = ?");
+    $stmt->bind_param('i', $userId);
+    $stmt->execute();
+    $res = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return (int)($res['credits'] ?? 0);
+}
+
+function deductCredits(mysqli $db, int $userId, int $amount, string $reason): bool {
+    if ($amount <= 0) return true;
+    
+    $current = getUserCredits($db, $userId);
+    if ($current < $amount) return false;
+    
+    $stmt = $db->prepare("UPDATE users SET credits = credits - ? WHERE id = ? AND credits >= ?");
+    $stmt->bind_param('iii', $amount, $userId, $amount);
+    $stmt->execute();
+    $success = $stmt->affected_rows > 0;
+    $stmt->close();
+    
+    if ($success) {
+        $log = $db->prepare("INSERT INTO credit_logs (user_id, amount, reason) VALUES (?, ?, ?)");
+        $negAmount = -$amount;
+        $log->bind_param('iis', $userId, $negAmount, $reason);
+        $log->execute();
+        $log->close();
+    }
+    return $success;
 }
 
 // ─── CLOUDINARY ───────────────────────────────────────────────

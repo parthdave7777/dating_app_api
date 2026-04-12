@@ -19,6 +19,23 @@ if (!$swipedUserId || !in_array($action, ['like', 'dislike', 'superlike', 'compl
 }
 $db = getDB();
 
+// ─── CREDIT DEDUCTION ──────────────────────────────────────────
+$cost = 0;
+if ($action === 'like')       $cost = CREDIT_COST_LIKE;
+if ($action === 'superlike')  $cost = CREDIT_COST_SUPERLIKE;
+if ($action === 'compliment') $cost = CREDIT_COST_COMPLIMENT;
+
+if ($cost > 0) {
+    if (!deductCredits($db, $userId, $cost, "Discovery: " . ucfirst($action))) {
+        echo json_encode([
+            'status' => 'error', 
+            'message' => 'Insufficient credits. Wait for daily refresh or upgrade.', 
+            'error_code' => 'INSUFFICIENT_CREDITS'
+        ]);
+        exit();
+    }
+}
+
 // Anti-spam: check if user swiped more than 100 times in the last hour
 $spamCheck = $db->prepare(
     "SELECT COUNT(*) AS cnt FROM swipes 
@@ -137,6 +154,7 @@ $db->close();
 echo json_encode([
     'status'   => 'success',
     'is_match' => $isMatch,
-    'match_id' => $matchId
+    'match_id' => $matchId,
+    'new_balance' => getUserCredits($db, $userId)
 ]);
 ?>

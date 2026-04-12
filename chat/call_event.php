@@ -61,6 +61,13 @@ if ($dupCheck->get_result()->num_rows > 0) {
 }
 $dupCheck->close();
 
+// ── Credit Deduction for Calls ────────────────────────────────
+if ($event === 'call_ended' && $duration > 5) { // More than 5 sec counts
+    $minutes = ceil($duration / 60);
+    $cost = $minutes * CREDIT_COST_CALL_MIN;
+    deductCredits($db, $userId, $cost, "Video call: $minutes min");
+}
+
 // Map event to message type
 // call_started → 'call_event', others map to their own type for better Flutter routing
 $typeMap = [

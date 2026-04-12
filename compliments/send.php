@@ -20,6 +20,16 @@ if (!$receiverId || empty($message)) {
 
 $db = getDB();
 
+// ── Credit Deduction ──────────────────────────────────────────
+if (!deductCredits($db, $userId, CREDIT_COST_COMPLIMENT, "Sent Compliment")) {
+    echo json_encode([
+        'status' => 'error', 
+        'message' => 'Insufficient credits for a compliment.', 
+        'error_code' => 'INSUFFICIENT_CREDITS'
+    ]);
+    exit();
+}
+
 // 1. One complement only check
 $checkStmt = $db->prepare("SELECT id FROM compliments WHERE sender_id = ? AND receiver_id = ?");
 $checkStmt->bind_param('ii', $userId, $receiverId);
@@ -92,5 +102,6 @@ $db->close();
 echo json_encode([
     'status' => 'success',
     'is_match' => $isMatch,
-    'match_id' => $matchId
+    'match_id' => $matchId,
+    'new_balance' => getUserCredits($db, $userId)
 ]);
