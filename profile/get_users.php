@@ -59,6 +59,10 @@ $poolConditions = "
         SELECT blocked_user_id FROM blocks WHERE blocker_id = ?
         UNION
         SELECT blocker_id FROM blocks WHERE blocked_user_id = ?
+        UNION
+        SELECT user1_id FROM matches WHERE user2_id = ?
+        UNION
+        SELECT user2_id FROM matches WHERE user1_id = ?
     )
 ";
 
@@ -80,9 +84,8 @@ $candidateQuery = "
 ";
 
 $stmt = $db->prepare($candidateQuery);
-// Params: 1. userId (swipes join), 2. targetGender (gender check 1), 3. targetGender (gender check 2), 
-// 4. minAge, 5. maxAge, 6. userId (blocks blocker), 7. userId (blocks blocked)
-$stmt->bind_param('issiiii', $userId, $targetGender, $targetGender, $minAge, $maxAge, $userId, $userId);
+// 4. minAge, 5. maxAge, 6. userId (blocks blocker), 7. userId (blocks blocked), 8. userId (matches 1), 9. userId (matches 2)
+$stmt->bind_param('issiiiiii', $userId, $targetGender, $targetGender, $minAge, $maxAge, $userId, $userId, $userId, $userId);
 $stmt->execute();
 $candidateResult = $stmt->get_result();
 $stmt->close();

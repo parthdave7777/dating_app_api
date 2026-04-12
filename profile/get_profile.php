@@ -74,6 +74,23 @@ while ($post = $postResult->fetch_assoc()) {
     $posts[] = $post;
 }
 
+// Match Status
+$isMatch = false;
+$matchId = null;
+if ($userId !== $targetId) {
+    $mStmt = $db->prepare("SELECT id FROM matches WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)");
+    $u1 = min($userId, $targetId);
+    $u2 = max($userId, $targetId);
+    $mStmt->bind_param('iiii', $u1, $u2, $u1, $u2);
+    $mStmt->execute();
+    $mRes = $mStmt->get_result();
+    if ($mRes->num_rows > 0) {
+        $isMatch = true;
+        $matchId = (int) $mRes->fetch_assoc()['id'];
+    }
+    $mStmt->close();
+}
+
 // Distance
 $distance = null;
 if ($userId !== $targetId) {
@@ -134,6 +151,8 @@ echo json_encode([
         'discovery_max_dist' => (int)  ($user['discovery_max_dist'] ?? 50),
         'discovery_min_dist' => (int)  ($user['discovery_min_dist'] ?? 0),
         'global_discovery'   => (bool) ($user['global_discovery']   ?? 1),
+        'is_match'           => (bool) $isMatch,
+        'match_id'           => $matchId,
         'notif_matches'      => (bool) ($user['notif_matches']      ?? 1),
         'notif_messages'     => (bool) ($user['notif_messages']     ?? 1),
         'notif_likes'        => (bool) ($user['notif_likes']        ?? 1),
