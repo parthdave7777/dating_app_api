@@ -106,23 +106,24 @@ if ($action === 'like' || $action === 'superlike') {
         $matchStmt = $db->prepare("INSERT IGNORE INTO matches (user1_id, user2_id) VALUES (?, ?)");
         $matchStmt->bind_param('ii', $u1, $u2);
         $matchStmt->execute();
-        $matchId = $db->insert_id ?: null;
-
+        $matchId = $db->insert_id;
         if (!$matchId) {
-            $fetchStmt = $db->prepare("SELECT id FROM matches WHERE user1_id = ? AND user2_id = ?");
-            $fetchStmt->bind_param('ii', $u1, $u2);
-            $fetchStmt->execute();
-            $mRow = $fetchStmt->get_result()->fetch_assoc();
-            $fetchStmt->close();
-            $matchId = $mRow['id'] ?? null;
+            $mGet = $db->prepare("SELECT id FROM matches WHERE user1_id=? AND user2_id=?");
+            $mGet->bind_param('ii', $u1, $u2);
+            $mGet->execute();
+            $matchId = $mGet->get_result()->fetch_assoc()['id'] ?? null;
+            $mGet->close();
         }
         $matchStmt->close();
 
         $isMatch = true;
-        // Mutual match notification
+        
+        require_once __DIR__ . '/../notifications/send_push.php';
         sendMatchNotification($db, $userId, $swipedUserId, (int)$matchId);
+
     } else {
-        // Just a one-way interaction
+        // Not a match (yet), just a regular like/superlike
+        require_once __DIR__ . '/../notifications/send_push.php';
         if ($action === 'superlike') {
             sendSuperLikeNotification($db, $userId, $swipedUserId);
         } else {
@@ -136,60 +137,6 @@ $db->close();
 echo json_encode([
     'status'   => 'success',
     'is_match' => $isMatch,
-    'match_id' => $matchId,
+    'match_id' => $matchId
 ]);
-
-// ─── Helpers ──────────────────────────────────────────────────
-function sendMatchNotification(mysqli $db, int $fromId, int $toId, int $matchId): void {
-    require_once __DIR__ . '/../notifications/send_push.php';
-
-    $info = getSenderInfo($db, $fromId);
-    $name = $info['name'];
-    sendPush($db, $toId, 'match', "Match Found! 💖", "You matched with $name. Start chatting or stand knowing each other!", [
-        'match_id'     => (string) $matchId,
-        'sender_id'    => (string) $fromId,
-        'sender_name'  => $name,
-        'sender_photo' => $info['photo'] ?? ''
-    ]);
-}
-
-function sendLikeNotification(mysqli $db, int $fromId, int $toId): void {
-    require_once __DIR__ . '/../notifications/send_push.php';
-
-    $info = getSenderInfo($db, $fromId);
-    $name = $info['name'];
-    sendPush($db, $toId, 'like', "Someone Likes You! Spark ✨", "A new person has swiped right on you. Check them out!", [
-        'swiper_id'    => (string) $fromId,
-        'sender_id'    => (string) $fromId,   
-        'sender_name'  => $name,
-        'sender_photo' => $info['photo'] ?? ''
-    ]);
-}
-
-function sendSuperLikeNotification(mysqli $db, int $fromId, int $toId): void {
-    require_once __DIR__ . '/../notifications/send_push.php';
-
-    $info = getSenderInfo($db, $fromId);
-    $name = $info['name'];
-    sendPush($db, $toId, 'superlike', "SUPER LIKE! ⭐", "$name just Super Liked you! They are really interested.", [
-        'swiper_id'    => (string) $fromId,
-        'sender_id'    => (string) $fromId,
-        'sender_name'  => $name,
-        'sender_photo' => $info['photo'] ?? ''
-    ]);
-}
-
-function getSenderInfo(mysqli $db, int $id): array {
-    $stmt = $db->prepare("
-        SELECT u.full_name, (SELECT photo_url FROM user_photos WHERE user_id = u.id AND is_dp = 1 LIMIT 1) as photo
-        FROM users u WHERE u.id = ?
-    ");
-    $stmt->bind_param('i', $id);
-    $stmt->execute();
-    $res = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    return [
-        'name'  => $res['full_name'] ?? 'Someone',
-        'photo' => cloudinaryTransform($res['photo'] ?? '', 'w_200,c_thumb,g_face,q_auto,f_auto')
-    ];
-}
+?>

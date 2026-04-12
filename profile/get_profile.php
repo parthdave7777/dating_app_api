@@ -7,10 +7,32 @@ $db     = getDB();
 
 if (isset($_GET['target_id']) && (int)$_GET['target_id'] !== $userId) {
     $targetId = (int) $_GET['target_id'];
-    // FIX: column is 'viewed_id' not 'viewed_user_id'
+    
+    // 1. Check if we should send a notification (only if last view was > 6 hours ago)
+    $viewCheck = $db->prepare("SELECT viewed_at FROM profile_views WHERE viewer_id = ? AND viewed_id = ?");
+    $viewCheck->bind_param('ii', $userId, $targetId);
+    $viewCheck->execute();
+    $viewRes = $viewCheck->get_result()->fetch_assoc();
+    $viewCheck->close();
+
+    $shouldNotify = true;
+    if ($viewRes) {
+        $lastView = strtotime($viewRes['viewed_at']);
+        if (time() - $lastView < (6 * 3600)) { // 6 hours
+            $shouldNotify = false;
+        }
+    }
+
+    // 2. Record/Update the view
     $db->query("INSERT INTO profile_views (viewer_id, viewed_id)
                 VALUES ($userId, $targetId)
                 ON DUPLICATE KEY UPDATE viewed_at = NOW()");
+
+    // 3. Send Notification if appropriate
+    if ($shouldNotify) {
+        require_once __DIR__ . '/../notifications/send_push.php';
+        sendProfileViewNotification($db, $userId, $targetId);
+    }
 } else {
     $targetId = $userId;
 }

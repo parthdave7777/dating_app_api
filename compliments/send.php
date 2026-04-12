@@ -50,18 +50,17 @@ $swipeStmt->bind_param('ii', $userId, $receiverId);
 $swipeStmt->execute();
 $swipeStmt->close();
 
-// 5. Check for Match
+// 5. Match Processing
 $isMatch = false;
 $matchId = null;
 
-// Check if THEY showed interest (like, superlike, or compliment)
 $matchCheck = $db->prepare("SELECT id FROM swipes WHERE swiper_id = ? AND swiped_id = ? AND action IN ('like', 'superlike', 'compliment')");
 $matchCheck->bind_param('ii', $receiverId, $userId);
 $matchCheck->execute();
-$res = $matchCheck->get_result();
+$matchRes = $matchCheck->get_result();
 $matchCheck->close();
 
-if ($res->num_rows > 0) {
+if ($matchRes->num_rows > 0) {
     $isMatch = true;
     $u1 = min($userId, $receiverId);
     $u2 = max($userId, $receiverId);
@@ -79,18 +78,14 @@ if ($res->num_rows > 0) {
     $stmt->close();
 }
 
-// 6. Send Push Notification for Compliment
+// 6. Send Notifications
 require_once __DIR__ . '/../notifications/send_push.php';
-$senderStmt = $db->prepare("SELECT full_name FROM users WHERE id = ?");
-$senderStmt->bind_param('i', $userId);
-$senderStmt->execute();
-$senderName = $senderStmt->get_result()->fetch_assoc()['full_name'] ?? 'Someone';
-$senderStmt->close();
 
-sendPush($db, $receiverId, 'compliment', "New Compliment! ✨", "$senderName sent you a compliment: $message", [
-    'sender_id' => (string)$userId,
-    'message'   => $message
-]);
+if ($isMatch) {
+    sendMatchNotification($db, $userId, $receiverId, (int)$matchId);
+} else {
+    sendComplimentNotification($db, $userId, $receiverId, $message);
+}
 
 $db->close();
 

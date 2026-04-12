@@ -179,30 +179,41 @@ function sendPush(
     }
 
     // ── Get recipient's FCM token AND check preferences ─────────────────────────────
-    $tokStmt = $db->prepare("SELECT fcm_token, notif_matches, notif_messages, notif_likes FROM users WHERE id = ?");
+    $tokStmt = $db->prepare("SELECT fcm_token, notif_matches, notif_messages, notif_likes, notif_who_swiped, notif_activity FROM users WHERE id = ?");
     $tokStmt->bind_param('i', $toUserId);
     $tokStmt->execute();
     $row = $tokStmt->get_result()->fetch_assoc();
     $tokStmt->close();
 
-    if (!$row) return;
+    if (!$row) {
+        error_log("[FCM] User $toUserId not found in database");
+        return;
+    }
 
-    // Filter by type
-    if ($type === 'message' && ($row['notif_messages'] ?? 1) == 0) {
+    // Filter by type - only block if specifically set to 0
+    if ($type === 'message' && isset($row['notif_messages']) && (int)$row['notif_messages'] === 0) {
         error_log("[FCM] Suppression: User $toUserId has disabled message notifications");
         return;
     }
-    if ($type === 'match' && ($row['notif_matches'] ?? 1) == 0) {
+    if ($type === 'match' && isset($row['notif_matches']) && (int)$row['notif_matches'] === 0) {
         error_log("[FCM] Suppression: User $toUserId has disabled match notifications");
         return;
     }
-    if ($type === 'like' && ($row['notif_likes'] ?? 1) == 0) {
+    if ($type === 'like' && isset($row['notif_likes']) && (int)$row['notif_likes'] === 0) {
         error_log("[FCM] Suppression: User $toUserId has disabled like notifications");
+        return;
+    }
+    if ($type === 'profile_view' && isset($row['notif_who_swiped']) && (int)$row['notif_who_swiped'] === 0) {
+        error_log("[FCM] Suppression: User $toUserId has disabled profile view notifications");
+        return;
+    }
+    if ($type === 'compliment' && isset($row['notif_activity']) && (int)$row['notif_activity'] === 0) {
+        error_log("[FCM] Suppression: User $toUserId has disabled compliment/activity notifications");
         return;
     }
 
     if (empty($row['fcm_token'])) {
-        error_log("[FCM] No FCM token for user $toUserId");
+        error_log("[FCM] No FCM token for user $toUserId. They might be logged out or haven't granted permission.");
         return;
     }
 
@@ -318,5 +329,86 @@ function sendPush(
         }
     }
 }
+} // end if (!function_exists('sendPush'))
 
-} // end if (!function_exists)
+// ── Shared Helper Functions ───────────────────────────────────
+
+if (!function_exists('getSenderInfo')) {
+    function getSenderInfo(mysqli $db, int $id): array {
+        $stmt = $db->prepare("
+            SELECT u.full_name, (SELECT photo_url FROM user_photos WHERE user_id = u.id AND is_dp = 1 LIMIT 1) as photo
+            FROM users u WHERE u.id = ?
+        ");
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $res = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        
+        $photo = $res['photo'] ?? '';
+        if (function_exists('cloudinaryTransform')) {
+            $photo = cloudinaryTransform($photo, 'w_200,c_thumb,g_face,q_auto,f_auto');
+        }
+
+        return [
+            'name'  => $res['full_name'] ?? 'Someone',
+            'photo' => $photo
+        ];
+    }
+}
+
+if (!function_exists('sendMatchNotification')) {
+    function sendMatchNotification(mysqli $db, int $fromId, int $toId, int $matchId): void {
+        $info = getSenderInfo($db, $fromId);
+        sendPush($db, $toId, 'match', "Match Found! 💖", "You swiped each other! You and " . $info['name'] . " matched.", [
+            'match_id'     => (string)$matchId,
+            'sender_id'    => (string)$fromId,
+            'sender_name'  => (string)$info['name'],
+            'sender_photo' => (string)$info['photo']
+        ]);
+    }
+}
+
+if (!function_exists('sendLikeNotification')) {
+    function sendLikeNotification(mysqli $db, int $fromId, int $toId): void {
+        $info = getSenderInfo($db, $fromId);
+        sendPush($db, $toId, 'like', "Someone Likes You! Spark ✨", "A new person has swiped right on you. Check them out!", [
+            'sender_id'    => (string)$fromId,
+            'sender_name'  => (string)$info['name'],
+            'sender_photo' => (string)$info['photo']
+        ]);
+    }
+}
+
+if (!function_exists('sendSuperLikeNotification')) {
+    function sendSuperLikeNotification(mysqli $db, int $fromId, int $toId): void {
+        $info = getSenderInfo($db, $fromId);
+        sendPush($db, $toId, 'superlike', "SUPER LIKE! ⭐", $info['name'] . " just Super Liked you! They are really interested.", [
+            'sender_id'    => (string)$fromId,
+            'sender_name'  => (string)$info['name'],
+            'sender_photo' => (string)$info['photo']
+        ]);
+    }
+}
+
+if (!function_exists('sendComplimentNotification')) {
+    function sendComplimentNotification(mysqli $db, int $fromId, int $toId, string $message): void {
+        $info = getSenderInfo($db, $fromId);
+        sendPush($db, $toId, 'compliment', "New Compliment! ✨", $info['name'] . " sent you a compliment: $message", [
+            'sender_id'    => (string)$fromId,
+            'sender_name'  => (string)$info['name'],
+            'sender_photo' => (string)$info['photo'],
+            'message'      => (string)$message
+        ]);
+    }
+}
+
+if (!function_exists('sendProfileViewNotification')) {
+    function sendProfileViewNotification(mysqli $db, int $fromId, int $toId): void {
+        $info = getSenderInfo($db, $fromId);
+        sendPush($db, $toId, 'profile_view', "Someone viewed you! 👀", $info['name'] . " just took a look at your profile.", [
+            'sender_id'    => (string)$fromId,
+            'sender_name'  => (string)$info['name'],
+            'sender_photo' => (string)$info['photo']
+        ]);
+    }
+}
