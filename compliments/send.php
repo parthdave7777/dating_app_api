@@ -1,0 +1,91 @@
+<?php
+// compliments/send.php
+require_once __DIR__ . '/../config.php';
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    echo json_encode(['status' => 'error', 'message' => 'Method not allowed']);
+    exit();
+}
+
+$userId = getAuthUserId();
+$body   = json_decode(file_get_contents('php://input'), true);
+
+$receiverId = (int) ($body['receiver_id'] ?? 0);
+$message    = trim($body['message'] ?? '');
+
+if (!$receiverId || empty($message)) {
+    echo json_encode(['status' => 'error', 'message' => 'receiver_id and message required']);
+    exit();
+}
+
+$db = getDB();
+
+// 1. One complement only check
+$checkStmt = $db->prepare("SELECT id FROM compliments WHERE sender_id = ? AND receiver_id = ?");
+$checkStmt->bind_param('ii', $userId, $receiverId);
+$checkStmt->execute();
+if ($checkStmt->get_result()->num_rows > 0) {
+    $checkStmt->close();
+    $db->close();
+    echo json_encode(['status' => 'error', 'message' => 'You have already sent a compliment to this user']);
+    exit();
+}
+$checkStmt->close();
+
+// 2. Insert compliment
+$stmt = $db->prepare("INSERT INTO compliments (sender_id, receiver_id, message) VALUES (?, ?, ?)");
+$stmt->bind_param('iis', $userId, $receiverId, $message);
+$stmt->execute();
+$stmt->close();
+
+// 3. Increment ELO (+15 for compliment)
+$db->query("UPDATE users SET elo_score = elo_score + 15 WHERE id = $receiverId");
+
+// 4. Record as 'like' in swipes table
+$swipeStmt = $db->prepare("INSERT IGNORE INTO swipes (swiper_id, swiped_id, action) VALUES (?, ?, 'like')");
+$swipeStmt->bind_param('ii', $userId, $receiverId);
+$swipeStmt->execute();
+$swipeStmt->close();
+
+// 5. Check for Match
+$isMatch = false;
+$matchId = null;
+
+// Check if they liked or superliked back
+$matchCheck = $db->prepare("SELECT id FROM swipes WHERE swiper_id = ? AND swiped_id = ? AND action IN ('like', 'superlike')");
+$matchCheck->bind_param('ii', $receiverId, $userId);
+$matchCheck->execute();
+$res = $matchCheck->get_result();
+$matchCheck->close();
+
+if ($res->num_rows > 0) {
+    $isMatch = true;
+    $u1 = min($userId, $receiverId);
+    $u2 = max($userId, $receiverId);
+    $stmt = $db->prepare("INSERT IGNORE INTO matches (user1_id, user2_id) VALUES (?, ?)");
+    $stmt->bind_param('ii', $u1, $u2);
+    $stmt->execute();
+    $matchId = $db->insert_id;
+    $stmt->close();
+}
+
+// 6. Send Push Notification for Compliment
+require_once __DIR__ . '/../notifications/send_push.php';
+$senderStmt = $db->prepare("SELECT full_name FROM users WHERE id = ?");
+$senderStmt->bind_param('i', $userId);
+$senderStmt->execute();
+$senderName = $senderStmt->get_result()->fetch_assoc()['full_name'] ?? 'Someone';
+$senderStmt->close();
+
+sendPush($db, $receiverId, 'compliment', "New Compliment! ✨", "$senderName sent you a compliment: $message", [
+    'sender_id' => (string)$userId,
+    'message'   => $message
+]);
+
+$db->close();
+
+echo json_encode([
+    'status' => 'success',
+    'is_match' => $isMatch,
+    'match_id' => $matchId
+]);

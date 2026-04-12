@@ -11,9 +11,9 @@ $userId = getAuthUserId();
 $body   = json_decode(file_get_contents('php://input'), true);
 
 $swipedUserId = (int)   ($body['swiped_user_id'] ?? 0);
-$action       = trim($body['action'] ?? ''); // like | dislike
+$action       = trim($body['action'] ?? ''); // like | dislike | superlike
 
-if (!$swipedUserId || !in_array($action, ['like', 'dislike'])) {
+if (!$swipedUserId || !in_array($action, ['like', 'dislike', 'superlike'])) {
     echo json_encode(['status' => 'error', 'message' => 'swiped_user_id and valid action required']);
     exit();
 }
@@ -42,9 +42,10 @@ if ((int)$spamRow['cnt'] >= 100) {
 
 // Save swipe (ignore duplicate)
 $stmt = $db->prepare(
-    "INSERT IGNORE INTO swipes (swiper_id, swiped_id, action) VALUES (?, ?, ?)"
+    "INSERT INTO swipes (swiper_id, swiped_id, action) VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE action = ?, created_at = NOW()"
 );
-$stmt->bind_param('iis', $userId, $swipedUserId, $action);
+$stmt->bind_param('iiss', $userId, $swipedUserId, $action, $action);
 $stmt->execute();
 $stmt->close();
 
@@ -67,14 +68,10 @@ while ($row = $eloResult->fetch_assoc()) {
 $myElo    = $eloMap[$userId]    ?? 1000;
 $theirElo = $eloMap[$swipedUserId] ?? 1000;
 
-// ELO change rules:
-// Like/Superlike received → their score goes UP by 10
-// Dislike received → their score goes DOWN by 5
-// Superlike received → their score goes UP by 20 (stronger signal)
-// Score floor is 100, no ceiling
-
 if ($action === 'like') {
     $newTheirElo = max(100, $theirElo + 10);
+} elseif ($action === 'superlike') {
+    $newTheirElo = max(100, $theirElo + 25);
 } elseif ($action === 'dislike') {
     $newTheirElo = max(100, $theirElo - 5);
 } else {
@@ -85,23 +82,30 @@ $eloUpdate = $db->prepare("UPDATE users SET elo_score = ? WHERE id = ?");
 $eloUpdate->bind_param('ii', $newTheirElo, $swipedUserId);
 $eloUpdate->execute();
 $eloUpdate->close();
-// ── End ELO Update ────────────────────────────────────────
 
 $isMatch = false;
 $matchId = null;
 
-if ($action === 'like') {
+if ($action === 'like' || $action === 'superlike') {
     // 1. Check if it's a mutual match
+    // Mutual if other user has swiped LIKE or SUPERLIKE on you
     $checkStmt = $db->prepare(
         "SELECT id FROM swipes
-         WHERE swiper_id = ? AND swiped_id = ? AND action = 'like'"
+         WHERE swiper_id = ? AND swiped_id = ? AND action IN ('like', 'superlike')"
     );
     $checkStmt->bind_param('ii', $swipedUserId, $userId);
     $checkStmt->execute();
     $checkRes = $checkStmt->get_result();
     $checkStmt->close();
 
-    if ($checkRes->num_rows > 0) {
+    // 2. Also check if the current user just liked someone who previously COMPLEMENTED them
+    $compCheck = $db->prepare("SELECT id FROM compliments WHERE sender_id = ? AND receiver_id = ?");
+    $compCheck->bind_param('ii', $swipedUserId, $userId);
+    $compCheck->execute();
+    $compRes = $compCheck->get_result();
+    $compCheck->close();
+
+    if ($checkRes->num_rows > 0 || $compRes->num_rows > 0) {
         // It's a match!
         $u1 = min($userId, $swipedUserId);
         $u2 = max($userId, $swipedUserId);
@@ -125,8 +129,12 @@ if ($action === 'like') {
         // Mutual match notification
         sendMatchNotification($db, $userId, $swipedUserId, (int)$matchId);
     } else {
-        // Just a one-way like
-        sendLikeNotification($db, $userId, $swipedUserId);
+        // Just a one-way interaction
+        if ($action === 'superlike') {
+            sendSuperLikeNotification($db, $userId, $swipedUserId);
+        } else {
+            sendLikeNotification($db, $userId, $swipedUserId);
+        }
     }
 }
 
@@ -159,7 +167,20 @@ function sendLikeNotification(mysqli $db, int $fromId, int $toId): void {
     $name = $info['name'];
     sendPush($db, $toId, 'like', "Someone Likes You! Spark ✨", "A new person has swiped right on you. Check them out!", [
         'swiper_id'    => (string) $fromId,
-        'sender_id'    => (string) $fromId,   // ADD: matches Flutter's sender_id self-filter check
+        'sender_id'    => (string) $fromId,   
+        'sender_name'  => $name,
+        'sender_photo' => $info['photo'] ?? ''
+    ]);
+}
+
+function sendSuperLikeNotification(mysqli $db, int $fromId, int $toId): void {
+    require_once __DIR__ . '/../notifications/send_push.php';
+
+    $info = getSenderInfo($db, $fromId);
+    $name = $info['name'];
+    sendPush($db, $toId, 'superlike', "SUPER LIKE! ⭐", "$name just Super Liked you! They are really interested.", [
+        'swiper_id'    => (string) $fromId,
+        'sender_id'    => (string) $fromId,
         'sender_name'  => $name,
         'sender_photo' => $info['photo'] ?? ''
     ]);

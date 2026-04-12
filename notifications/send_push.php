@@ -166,9 +166,8 @@ function sendPush(
 ): void {
 
     // ── Save to notifications table (History Hub) ───────────────────────────
-    // BUG 3 FIX: Only persist match/like/superlike/missed_call — profile_view removed.
-    // Skip transient events (incoming_call, accept, etc.) and individual chat messages.
-    $persistTypes = ['match', 'like', 'superlike', 'missed_call'];
+    // BUG 3 FIX: Persist social interactions to the history table.
+    $persistTypes = ['match', 'like', 'superlike', 'missed_call', 'compliment', 'profile_view'];
     if (in_array($type, $persistTypes, true)) {
         $dataJson = json_encode(array_merge($data, ['type' => $type]));
         $stmt = $db->prepare(
