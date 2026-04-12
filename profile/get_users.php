@@ -36,6 +36,9 @@ $maxAge = isset($_GET['max_age']) ? (int)$_GET['max_age'] : 100;
 $minDist = isset($_GET['min_dist']) ? (int)$_GET['min_dist'] : 0;
 $maxDist = isset($_GET['max_dist']) ? (int)$_GET['max_dist'] : 50;
 $isGlobal = isset($_GET['global_discovery']) ? ($_GET['global_discovery'] === 'true' || $_GET['global_discovery'] === '1') : true;
+$goal     = isset($_GET['relationship_goal']) ? $_GET['relationship_goal'] : null;
+$smoke    = isset($_GET['smoking']) ? $_GET['smoking'] : null;
+$drink    = isset($_GET['drinking']) ? $_GET['drinking'] : null;
 
 // 4. Gender Normalization & Reciprocal Matching
 $myGender = strtolower($me['gender'] ?? '');
@@ -65,6 +68,16 @@ $poolConditions = "
         SELECT user2_id FROM matches WHERE user1_id = ?
     )
 ";
+
+if ($goal) {
+    $poolConditions .= " AND u.relationship_goal = '" . $db->real_escape_string($goal) . "'";
+}
+if ($smoke) {
+    $poolConditions .= " AND u.lifestyle_smoking = '" . $db->real_escape_string($smoke) . "'";
+}
+if ($drink) {
+    $poolConditions .= " AND u.lifestyle_drinking = '" . $db->real_escape_string($drink) . "'";
+}
 
 $candidateQuery = "
     SELECT u.id, u.full_name, u.age, u.gender, u.looking_for, u.bio, u.interests,
