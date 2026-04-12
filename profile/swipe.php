@@ -11,9 +11,9 @@ $userId = getAuthUserId();
 $body   = json_decode(file_get_contents('php://input'), true);
 
 $swipedUserId = (int)   ($body['swiped_user_id'] ?? 0);
-$action       = trim($body['action'] ?? ''); // like | dislike | superlike
+$action       = trim($body['action'] ?? ''); // like | dislike | superlike | compliment
 
-if (!$swipedUserId || !in_array($action, ['like', 'dislike', 'superlike'])) {
+if (!$swipedUserId || !in_array($action, ['like', 'dislike', 'superlike', 'compliment'])) {
     echo json_encode(['status' => 'error', 'message' => 'swiped_user_id and valid action required']);
     exit();
 }
@@ -88,24 +88,17 @@ $matchId = null;
 
 if ($action === 'like' || $action === 'superlike') {
     // 1. Check if it's a mutual match
-    // Mutual if other user has swiped LIKE or SUPERLIKE on you
+    // Mutual if other user has swiped LIKE, SUPERLIKE, or COMPLIMENT on you
     $checkStmt = $db->prepare(
         "SELECT id FROM swipes
-         WHERE swiper_id = ? AND swiped_id = ? AND action IN ('like', 'superlike')"
+         WHERE swiper_id = ? AND swiped_id = ? AND action IN ('like', 'superlike', 'compliment')"
     );
     $checkStmt->bind_param('ii', $swipedUserId, $userId);
     $checkStmt->execute();
     $checkRes = $checkStmt->get_result();
     $checkStmt->close();
 
-    // 2. Also check if the current user just liked someone who previously COMPLEMENTED them
-    $compCheck = $db->prepare("SELECT id FROM compliments WHERE sender_id = ? AND receiver_id = ?");
-    $compCheck->bind_param('ii', $swipedUserId, $userId);
-    $compCheck->execute();
-    $compRes = $compCheck->get_result();
-    $compCheck->close();
-
-    if ($checkRes->num_rows > 0 || $compRes->num_rows > 0) {
+    if ($checkRes->num_rows > 0) {
         // It's a match!
         $u1 = min($userId, $swipedUserId);
         $u2 = max($userId, $swipedUserId);

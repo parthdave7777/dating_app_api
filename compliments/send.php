@@ -41,8 +41,11 @@ $stmt->close();
 // 3. Increment ELO (+15 for compliment)
 $db->query("UPDATE users SET elo_score = elo_score + 15 WHERE id = $receiverId");
 
-// 4. Record as 'like' in swipes table
-$swipeStmt = $db->prepare("INSERT IGNORE INTO swipes (swiper_id, swiped_id, action) VALUES (?, ?, 'like')");
+// 4. Record as 'compliment' in swipes table
+$swipeStmt = $db->prepare("
+    INSERT INTO swipes (swiper_id, swiped_id, action) VALUES (?, ?, 'compliment')
+    ON DUPLICATE KEY UPDATE action = VALUES(action), created_at = NOW()
+");
 $swipeStmt->bind_param('ii', $userId, $receiverId);
 $swipeStmt->execute();
 $swipeStmt->close();
@@ -51,8 +54,8 @@ $swipeStmt->close();
 $isMatch = false;
 $matchId = null;
 
-// Check if they liked or superliked back
-$matchCheck = $db->prepare("SELECT id FROM swipes WHERE swiper_id = ? AND swiped_id = ? AND action IN ('like', 'superlike')");
+// Check if THEY showed interest (like, superlike, or compliment)
+$matchCheck = $db->prepare("SELECT id FROM swipes WHERE swiper_id = ? AND swiped_id = ? AND action IN ('like', 'superlike', 'compliment')");
 $matchCheck->bind_param('ii', $receiverId, $userId);
 $matchCheck->execute();
 $res = $matchCheck->get_result();
@@ -66,6 +69,13 @@ if ($res->num_rows > 0) {
     $stmt->bind_param('ii', $u1, $u2);
     $stmt->execute();
     $matchId = $db->insert_id;
+    if (!$matchId) {
+        $getM = $db->prepare("SELECT id FROM matches WHERE user1_id = ? AND user2_id = ?");
+        $getM->bind_param('ii', $u1, $u2);
+        $getM->execute();
+        $matchId = $getM->get_result()->fetch_assoc()['id'] ?? null;
+        $getM->close();
+    }
     $stmt->close();
 }
 
