@@ -57,6 +57,10 @@ if (APP_ENV === 'local') {
     // ── AGORA VIDEO CALLS ────────────────────────────────────
     define('AGORA_APP_ID',   '093e7f655f564c7ca14acbcdce68f390');
     define('AGORA_APP_CERT', '11c4d01441fd4c19aacd5bf2f867e945');
+
+    // ── RAZORPAY ────────────────────────────────────────────
+    define('RAZORPAY_KEY',    'rzp_test_ScveM5B4eK7mQL');
+    define('RAZORPAY_SECRET', 'y2omoCZQbK3o90BSWRCvanFL');
     
 } else {
     // ── PRODUCTION (Aiven MySQL + Render) ───────────────────
@@ -76,6 +80,10 @@ if (APP_ENV === 'local') {
     // ── AGORA VIDEO CALLS ────────────────────────────────────
     define('AGORA_APP_ID',   getenv('AGORA_APP_ID')   ?: '093e7f655f564c7ca14acbcdce68f390');
     define('AGORA_APP_CERT', getenv('AGORA_APP_CERT') ?: '11c4d01441fd4c19aacd5bf2f867e945');
+
+    // ── RAZORPAY ────────────────────────────────────────────
+    define('RAZORPAY_KEY',    getenv('RAZORPAY_KEY')    ?: 'rzp_test_ScveM5B4eK7mQL');
+    define('RAZORPAY_SECRET', getenv('RAZORPAY_SECRET') ?: 'y2omoCZQbK3o90BSWRCvanFL');
 }
 
 function getDB(): mysqli {
@@ -175,8 +183,9 @@ function getAuthUserId(): int {
         if ($last) {
             $lastTime = strtotime($last);
             if (time() - $lastTime > 86400) { // 24 hours
-                $db->query("UPDATE users SET credits = GREATEST(credits, " . DAILY_FREE_CREDITS . "), last_credit_refresh = NOW() WHERE id = $userId");
-                $db->query("INSERT INTO credit_logs (user_id, amount, reason) VALUES ($userId, " . DAILY_FREE_CREDITS . ", 'Daily refresh')");
+                // Reset free credits to 100 (No carry forward for free credits)
+                $db->query("UPDATE users SET credits = " . DAILY_FREE_CREDITS . ", last_credit_refresh = NOW() WHERE id = $userId");
+                $db->query("INSERT INTO credit_logs (user_id, amount, reason) VALUES ($userId, " . DAILY_FREE_CREDITS . ", 'Daily reset')");
             }
         }
         return $userId;
@@ -187,34 +196,62 @@ function getAuthUserId(): int {
 }
 
 function getUserCredits(mysqli $db, int $userId): int {
-    $stmt = $db->prepare("SELECT credits FROM users WHERE id = ?");
+    $stmt = $db->prepare("SELECT credits, premium_credits FROM users WHERE id = ?");
     $stmt->bind_param('i', $userId);
     $stmt->execute();
     $res = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    return (int)($res['credits'] ?? 0);
+    
+    $free = (int)($res['credits'] ?? 0);
+    $premium = (int)($res['premium_credits'] ?? 0);
+    return $free + $premium;
 }
 
 function deductCredits(mysqli $db, int $userId, int $amount, string $reason): bool {
     if ($amount <= 0) return true;
     
-    $current = getUserCredits($db, $userId);
-    if ($current < $amount) return false;
-    
-    $stmt = $db->prepare("UPDATE users SET credits = credits - ? WHERE id = ? AND credits >= ?");
-    $stmt->bind_param('iii', $amount, $userId, $amount);
+    $stmt = $db->prepare("SELECT credits, premium_credits FROM users WHERE id = ?");
+    $stmt->bind_param('i', $userId);
     $stmt->execute();
-    $success = $stmt->affected_rows > 0;
+    $res = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     
-    if ($success) {
+    $free = (int)($res['credits'] ?? 0);
+    $premium = (int)($res['premium_credits'] ?? 0);
+    
+    if (($free + $premium) < $amount) return false;
+    
+    // Spend free credits first
+    $spentFromFree = min($amount, $free);
+    $spentFromPremium = $amount - $spentFromFree;
+    
+    $db->begin_transaction();
+    try {
+        if ($spentFromFree > 0) {
+            $upd = $db->prepare("UPDATE users SET credits = credits - ? WHERE id = ?");
+            $upd->bind_param('ii', $spentFromFree, $userId);
+            $upd->execute();
+            $upd->close();
+        }
+        if ($spentFromPremium > 0) {
+            $upd = $db->prepare("UPDATE users SET premium_credits = premium_credits - ? WHERE id = ?");
+            $upd->bind_param('ii', $spentFromPremium, $userId);
+            $upd->execute();
+            $upd->close();
+        }
+        
         $log = $db->prepare("INSERT INTO credit_logs (user_id, amount, reason) VALUES (?, ?, ?)");
         $negAmount = -$amount;
         $log->bind_param('iis', $userId, $negAmount, $reason);
         $log->execute();
         $log->close();
+        
+        $db->commit();
+        return true;
+    } catch (Exception $e) {
+        $db->rollback();
+        return false;
     }
-    return $success;
 }
 
 // ─── CLOUDINARY ───────────────────────────────────────────────
