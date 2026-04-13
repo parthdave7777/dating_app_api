@@ -11,8 +11,8 @@ if (!$userId) {
 $db = getDB();
 
 try {
-    // Fetch logs ordered by most recent first
-    $stmt = $db->prepare("SELECT amount, reason, created_at FROM credit_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT 50");
+    // 🔍 FILTER: Only show positive amounts (Purchases)
+    $stmt = $db->prepare("SELECT amount, reason, created_at FROM credit_logs WHERE user_id = ? AND amount > 0 ORDER BY created_at DESC LIMIT 50");
     $stmt->bind_param('i', $userId);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -24,7 +24,7 @@ try {
             'amount' => (int)$row['amount'],
             'reason' => $row['reason'],
             'date'   => $row['created_at'],
-            'is_purchase' => ($row['amount'] > 0)
+            'is_purchase' => true
         ];
     }
 
