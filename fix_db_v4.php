@@ -93,18 +93,6 @@ $tables = [
         `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (`id`),
         CONSTRAINT `credit_logs_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
-
-    'swipes' => "CREATE TABLE `swipes` (
-        `id` int NOT NULL AUTO_INCREMENT,
-        `swiper_id` int NOT NULL,
-        `swiped_id` int NOT NULL,
-        `action` enum('like','dislike','superlike') NOT NULL,
-        `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (`id`),
-        UNIQUE KEY `unique_swipe` (`swiper_id`,`swiped_id`),
-        CONSTRAINT `swipes_ibfk_1` FOREIGN KEY (`swiper_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
-        CONSTRAINT `swipes_ibfk_2` FOREIGN KEY (`swiped_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
 ];
 

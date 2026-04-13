@@ -3,6 +3,11 @@
 require_once __DIR__ . '/../config.php';
 
 $userId = getAuthUserId();
+if (!$userId) {
+    header('Content-Type: application/json');
+    echo json_encode(['status' => 'error', 'message' => 'Unauthorized']);
+    exit();
+}
 $db     = getDB();
 
 if (isset($_GET['target_id']) && (int)$_GET['target_id'] !== $userId) {
