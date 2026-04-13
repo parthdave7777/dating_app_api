@@ -11,8 +11,12 @@ if (!$userId) {
 $db = getDB();
 
 try {
-    // 🔍 FILTER: Only show positive amounts (Purchases)
-    $stmt = $db->prepare("SELECT amount, reason, created_at FROM credit_logs WHERE user_id = ? AND amount > 0 ORDER BY created_at DESC LIMIT 50");
+    // 🔍 FILTER: Only show real financial purchases
+    // We check for is_purchase = 1 (New standard) OR the 'Purchase:' prefix (Legacy)
+    $stmt = $db->prepare("SELECT amount, reason, created_at FROM credit_logs 
+                          WHERE user_id = ? 
+                          AND (is_purchase = 1 OR reason LIKE 'Purchase:%') 
+                          ORDER BY created_at DESC LIMIT 50");
     $stmt->bind_param('i', $userId);
     $stmt->execute();
     $result = $stmt->get_result();

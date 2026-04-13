@@ -39,8 +39,15 @@ if ($action === 'verify') {
         user_id INT NOT NULL,
         amount INT NOT NULL,
         reason VARCHAR(255),
+        is_purchase TINYINT(1) DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )");
+
+    // Ensure is_purchase column exists if table was created previously
+    $checkLogCol = $db->query("SHOW COLUMNS FROM credit_logs LIKE 'is_purchase'");
+    if ($checkLogCol->num_rows == 0) {
+        $db->query("ALTER TABLE credit_logs ADD COLUMN is_purchase TINYINT(1) DEFAULT 0 AFTER reason");
+    }
 
     $db->begin_transaction();
     try {
@@ -50,8 +57,8 @@ if ($action === 'verify') {
         $stmt->execute();
         $stmt->close();
         
-        // Log transaction
-        $log = $db->prepare("INSERT INTO credit_logs (user_id, amount, reason) VALUES (?, ?, ?)");
+        // Log transaction as a purchase
+        $log = $db->prepare("INSERT INTO credit_logs (user_id, amount, reason, is_purchase) VALUES (?, ?, ?, 1)");
         $reason = "Purchase: $amount credits (ID: $razorpayId)";
         $log->bind_param('iis', $userId, $amount, $reason);
         $log->execute();
