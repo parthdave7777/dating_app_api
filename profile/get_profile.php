@@ -45,11 +45,21 @@ $stmt = $db->prepare("
            latitude, longitude, city, is_verified, profile_complete, setup_completed,
            discovery_min_age, discovery_max_age, discovery_max_dist, discovery_min_dist, global_discovery,
            notif_matches, notif_messages, notif_likes, notif_who_swiped, notif_activity,
-           credits
+           credits, premium_credits
     FROM users WHERE id = ?
 ");
+
+if (!$stmt) {
+    echo json_encode(['status' => 'error', 'message' => 'Query preparation failed: ' . $db->error]);
+    exit();
+}
+
 $stmt->bind_param('i', $targetId);
-$stmt->execute();
+if (!$stmt->execute()) {
+    echo json_encode(['status' => 'error', 'message' => 'Query execution failed: ' . $stmt->error]);
+    exit();
+}
+
 $result = $stmt->get_result();
 $stmt->close();
 
@@ -182,6 +192,7 @@ echo json_encode([
         'notif_who_swiped'   => (bool) ($user['notif_who_swiped']   ?? 1),
         'notif_activity'     => (bool) ($user['notif_activity']     ?? 1),
         'credits'            => (int)  ($user['credits']            ?? 0),
+        'premium_credits'    => (int)  ($user['premium_credits']    ?? 0),
     ],
 ]);
 
