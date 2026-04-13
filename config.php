@@ -149,13 +149,13 @@ function verifyToken(string $token): ?int {
 
 // ─── GET AUTHENTICATED USER ───────────────────────────────────
 // ─── CREDIT SYSTEM CONFIGURATION ─────────────────────────────
-define('CREDIT_COST_LIKE',        2);
-define('CREDIT_COST_SUPERLIKE',  10);
-define('CREDIT_COST_COMPLIMENT', 25);
-define('CREDIT_COST_REWIND',      5);
-define('CREDIT_COST_VIEW_SECRET', 50); // Viewing who liked/viewed you
-define('CREDIT_COST_CALL_MIN',   20); // Per minute
-define('DAILY_FREE_CREDITS',    100);
+define('CREDIT_COST_LIKE',        5);
+define('CREDIT_COST_SUPERLIKE',  25);
+define('CREDIT_COST_COMPLIMENT', 50);
+define('CREDIT_COST_REWIND',     10);
+define('CREDIT_COST_VIEW_SECRET', 100); 
+define('CREDIT_COST_CALL_MIN',   50); 
+define('DAILY_FREE_CREDITS',     50);
 
 function getAuthUserId(): int {
     $authHeader = $_SERVER['HTTP_AUTHORIZATION']
@@ -183,7 +183,7 @@ function getAuthUserId(): int {
         if ($last) {
             $lastTime = strtotime($last);
             if (time() - $lastTime > 86400) { // 24 hours
-                // Reset free credits to 100 (No carry forward for free credits)
+                // Reset free credits to 50
                 $db->query("UPDATE users SET credits = " . DAILY_FREE_CREDITS . ", last_credit_refresh = NOW() WHERE id = $userId");
                 $db->query("INSERT INTO credit_logs (user_id, amount, reason) VALUES ($userId, " . DAILY_FREE_CREDITS . ", 'Daily reset')");
             }

@@ -8,21 +8,40 @@ if (!$userId) {
     exit;
 }
 
-$action = $_POST['action'] ?? ''; // 'verify' for now
+// Support for JSON input (common in Flutter http.post)
+$input = json_decode(file_get_contents('php://input'), true);
+$data = (!empty($input)) ? $input : $_POST;
+
+$action = $data['action'] ?? ''; // 'verify' for now
 
 if ($action === 'verify') {
-    $razorpayId = $_POST['razorpay_payment_id'] ?? '';
-    $amount = (int)($_POST['amount_credits'] ?? 0);
+    $razorpayId = $data['razorpay_payment_id'] ?? '';
+    // Support both 'amount_credits' (String/Int) and 'credits'
+    $amount = (int)($data['amount_credits'] ?? $data['credits'] ?? 0);
     
     if (empty($razorpayId) || $amount <= 0) {
-        echo json_encode(['status' => 'error', 'message' => 'Invalid data']);
+        echo json_encode(['status' => 'error', 'message' => 'Invalid data (ID or Amount missing)', 'received' => $data]);
         exit;
     }
     
-    // In a real app, you'd use Razorpay SDK to verify signature here.
-    // For this implementation, we trust the frontend success call and record it.
-    
     $db = getDB();
+    
+    // 🔍 SELF-HEALING: Ensure columns and tables exist
+    // 1. Premium Credits Column
+    $checkCol = $db->query("SHOW COLUMNS FROM users LIKE 'premium_credits'");
+    if ($checkCol->num_rows == 0) {
+        $db->query("ALTER TABLE users ADD COLUMN premium_credits INT DEFAULT 0 AFTER credits");
+    }
+    
+    // 2. Credit Logs Table
+    $db->query("CREATE TABLE IF NOT EXISTS credit_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        amount INT NOT NULL,
+        reason VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )");
+
     $db->begin_transaction();
     try {
         // Add to premium_credits (Persists across daily refreshes)
@@ -40,21 +59,28 @@ if ($action === 'verify') {
         
         $db->commit();
         
-        // Get new total
-        $total = getUserCredits($db, $userId);
+        // Get new total balance
+        $check = $db->prepare("SELECT credits, premium_credits FROM users WHERE id = ?");
+        $check->bind_param('i', $userId);
+        $check->execute();
+        $res = $check->get_result()->fetch_assoc();
+        $check->close();
+        
+        $total = (int)($res['credits'] ?? 0) + (int)($res['premium_credits'] ?? 0);
         
         echo json_encode([
             'status' => 'success',
-            'message' => 'Credits added successfully',
-            'new_balance' => $total
+            'message' => 'Credits added successfully!',
+            'new_balance' => $total,
+            'added' => $amount
         ]);
         
     } catch (Exception $e) {
         $db->rollback();
-        echo json_encode(['status' => 'error', 'message' => 'Database error']);
+        echo json_encode(['status' => 'error', 'message' => 'Database error: ' . $e->getMessage()]);
     }
     exit;
 }
 
-echo json_encode(['status' => 'error', 'message' => 'Invalid action']);
+echo json_encode(['status' => 'error', 'message' => 'Invalid action', 'received' => $data]);
 ?>

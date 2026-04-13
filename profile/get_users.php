@@ -39,6 +39,11 @@ $isGlobal = isset($_GET['global_discovery']) ? ($_GET['global_discovery'] === 't
 $goal     = isset($_GET['relationship_goal']) ? $_GET['relationship_goal'] : null;
 $smoke    = isset($_GET['smoking']) ? $_GET['smoking'] : null;
 $drink    = isset($_GET['drinking']) ? $_GET['drinking'] : null;
+$pets     = isset($_GET['pets']) ? $_GET['pets'] : null;
+$workout  = isset($_GET['workout']) ? $_GET['workout'] : null;
+$diet     = isset($_GET['diet']) ? $_GET['diet'] : null;
+$schedule = isset($_GET['schedule']) ? $_GET['schedule'] : null;
+$comm     = isset($_GET['communication_style']) ? $_GET['communication_style'] : null;
 
 // 4. Gender Normalization & Reciprocal Matching
 $myGender = strtolower($me['gender'] ?? '');
@@ -77,6 +82,21 @@ if ($smoke) {
 }
 if ($drink) {
     $poolConditions .= " AND u.lifestyle_drinking = '" . $db->real_escape_string($drink) . "'";
+}
+if ($pets) {
+    $poolConditions .= " AND u.lifestyle_pets = '" . $db->real_escape_string($pets) . "'";
+}
+if ($workout) {
+    $poolConditions .= " AND u.lifestyle_workout = '" . $db->real_escape_string($workout) . "'";
+}
+if ($diet) {
+    $poolConditions .= " AND u.lifestyle_diet = '" . $db->real_escape_string($diet) . "'";
+}
+if ($schedule) {
+    $poolConditions .= " AND u.lifestyle_schedule = '" . $db->real_escape_string($schedule) . "'";
+}
+if ($comm) {
+    $poolConditions .= " AND u.communication_style = '" . $db->real_escape_string($comm) . "'";
 }
 
 $candidateQuery = "
