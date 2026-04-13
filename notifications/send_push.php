@@ -199,8 +199,8 @@ function sendPush(
         error_log("[FCM] Suppression: User $toUserId has disabled match notifications");
         return;
     }
-    if ($type === 'like' && isset($row['notif_likes']) && (int)$row['notif_likes'] === 0) {
-        error_log("[FCM] Suppression: User $toUserId has disabled like notifications");
+    if (in_array($type, ['like', 'superlike']) && isset($row['notif_likes']) && (int)$row['notif_likes'] === 0) {
+        error_log("[FCM] Suppression: User $toUserId has disabled like/superlike notifications");
         return;
     }
     if ($type === 'profile_view' && isset($row['notif_who_swiped']) && (int)$row['notif_who_swiped'] === 0) {
