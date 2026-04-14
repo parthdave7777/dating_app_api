@@ -236,6 +236,26 @@ function getAuthUserId(): int {
     die(json_encode(['status' => 'error', 'message' => 'Unauthorized']));
 }
 
+/**
+ * SPEED OPT: finish the request to the client but keep the script running
+ * for background tasks (Push, ELO, Stats).
+ */
+function sendResponseAndContinue(array $response): void {
+    header('Content-Type: application/json');
+    echo json_encode($response);
+    
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
+    } else {
+        // Fallback: Flush and close connection headers manually if possible
+        ignore_user_abort(true);
+        header('Connection: close');
+        header('Content-Length: ' . ob_get_length());
+        @ob_end_flush();
+        @flush();
+    }
+}
+
 function getUserCredits(mysqli $db, int $userId): int {
     $stmt = $db->prepare("SELECT credits, premium_credits FROM users WHERE id = ?");
     $stmt->bind_param('i', $userId);
