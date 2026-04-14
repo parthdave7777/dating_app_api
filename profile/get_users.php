@@ -87,9 +87,8 @@ if ($hasCoords && !$isGlobal) {
 }
 
 // 8. Main candidate query
-//    — blocks / matches use JOINs instead of correlated NOT EXISTS (much faster with indexes)
-//    — dp_url fetched in a single batch query below (not a correlated subquery per row)
-//    — ORDER BY distance so closest always comes first
+$globalCondition = $isGlobal ? "AND ($distSql) >= 500" : "";
+
 $sql = "
     SELECT
         u.id, u.full_name, u.age, u.gender, u.looking_for, u.bio,
@@ -112,12 +111,13 @@ $sql = "
       AND u.age              BETWEEN ? AND ?
       AND (
             (LOWER(u.gender) IN ('man','male','m')       AND '$targetGenderEsc' = 'man')
-         OR (LOWER(u.gender) IN ('woman','female','w')   AND '$targetGenderEsc' = 'woman')
+          OR (LOWER(u.gender) IN ('woman','female','w')   AND '$targetGenderEsc' = 'woman')
       )
       AND bl.blocker_id IS NULL
       AND mt.user1_id   IS NULL
       AND (sw.action IS NULL OR sw.action = 'dislike')
       $boundsCondition
+      $globalCondition
     ORDER BY " . ($isGlobal ? "u.last_active DESC" : "distance_km ASC") . "
     LIMIT $limit OFFSET $offset
 ";
@@ -130,11 +130,15 @@ $stmt->close();
 
 $rows = [];
 while ($row = $result->fetch_assoc()) {
-    // Exact distance filter (bounding box can let edge-cases slip through)
-    if (!$isGlobal && $hasCoords) {
-        $d = (float)$row['distance_km'];
+    $d = (float)$row['distance_km'];
+    
+    // Strict filters
+    if ($isGlobal) {
+        if ($d < 500) continue; // Only show 500km+ in global mode
+    } else if ($hasCoords) {
         if ($d < $minDist || $d > $maxDist) continue;
     }
+    
     // Mark recycled rows (previously disliked, now re-surfaced after 2-day window)
     $row['is_recycled'] = ($row['previous_action'] === 'dislike');
     $rows[] = $row;
