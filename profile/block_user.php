@@ -1,28 +1,33 @@
 <?php
-// profile/block_user.php
-require_once __DIR__ . '/../config.php';
+require_once '../config.php';
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['status' => 'error', 'message' => 'Method not allowed']);
-    exit();
+$userId = getAuthUserId();
+$targetId = (int)($_POST['target_id'] ?? 0);
+
+if (!$targetId) {
+    die(json_encode(['status' => 'error', 'message' => 'Target ID is required']));
 }
 
-$userId   = getAuthUserId();
-$body     = json_decode(file_get_contents('php://input'), true);
-$blockedId = (int) ($body['blocked_user_id'] ?? 0);
+$db = getDB();
 
-if (!$blockedId) {
-    echo json_encode(['status' => 'error', 'message' => 'blocked_user_id required']);
-    exit();
+try {
+    // 1. Record the block
+    $stmt = $db->prepare("INSERT IGNORE INTO blocks (blocker_id, blocked_user_id) VALUES (?, ?)");
+    $stmt->bind_param("ii", $userId, $targetId);
+    $stmt->execute();
+
+    // 2. Remove any existing match between them
+    $stmt = $db->prepare("DELETE FROM matches WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)");
+    $stmt->bind_param("iiii", $userId, $targetId, $targetId, $userId);
+    $stmt->execute();
+
+    // 3. Remove any likes/swipes
+    $stmt = $db->prepare("DELETE FROM swipes WHERE (swiper_id = ? AND swiped_id = ?) OR (swiper_id = ? AND swiped_id = ?)");
+    $stmt->bind_param("iiii", $userId, $targetId, $targetId, $userId);
+    $stmt->execute();
+
+    echo json_encode(['status' => 'success', 'message' => 'User blocked successfully']);
+} catch (Exception $e) {
+    echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
 }
-
-$db   = getDB();
-$stmt = $db->prepare(
-    "INSERT IGNORE INTO blocks (blocker_id, blocked_user_id) VALUES (?, ?)"
-);
-$stmt->bind_param('ii', $userId, $blockedId);
-$stmt->execute();
-$stmt->close();
-$db->close();
-
-echo json_encode(['status' => 'success', 'message' => 'User blocked']);
+?>

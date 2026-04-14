@@ -1,21 +1,24 @@
 <?php
-// profile/get_users.php — Optimized "Radial Expansion" Discovery Algorithm
+// profile/get_users.php — Optimized Discovery (Distance-first, client-side filters)
 require_once __DIR__ . '/../config.php';
 
 $userId = getAuthUserId();
-$db = getDB();
+$db     = getDB();
 
-// 1. Activity Pulse
+// 1. Activity Pulse (fire-and-forget — no result needed)
 $db->query("UPDATE users SET last_active = NOW() WHERE id = $userId");
 
-// 2. Clear Expired Boosts
-$db->query("UPDATE users SET is_new_user_boost = 0 WHERE new_user_boost_expires < NOW() AND is_new_user_boost = 1");
+// 2. Clear Expired Boosts (cheap indexed update)
+$db->query("UPDATE users SET is_new_user_boost = 0 
+            WHERE is_new_user_boost = 1 AND new_user_boost_expires < NOW()");
 
-// 3. Fetch Current User Details & Saved Discovery Settings
-$meStmt = $db->prepare("SELECT age, gender, latitude, longitude, interests, city, 
-                             discovery_min_age, discovery_max_age, 
-                             discovery_min_dist, discovery_max_dist, global_discovery 
-                       FROM users WHERE id = ?");
+// 3. Fetch Current User
+$meStmt = $db->prepare("
+    SELECT age, gender, latitude, longitude, city,
+           discovery_min_age, discovery_max_age,
+           discovery_min_dist, discovery_max_dist, global_discovery
+    FROM users WHERE id = ?
+");
 $meStmt->bind_param('i', $userId);
 $meStmt->execute();
 $me = $meStmt->get_result()->fetch_assoc();
@@ -27,229 +30,178 @@ if (!$me) {
     exit();
 }
 
-$myAge       = (int)($me['age'] ?? 20);
-$myLat       = (float)($me['latitude'] ?? 0);
-$myLng       = (float)($me['longitude'] ?? 0);
-$myCity      = trim(strtolower($me['city'] ?? ''));
-$myInterests = array_filter(array_map('trim', explode(',', strtolower($me['interests'] ?? ''))));
-$hasCoords   = ($myLat != 0 && $myLng != 0);
+$myAge  = (int)($me['age'] ?? 20);
+$myLat  = (float)($me['latitude'] ?? 0);
+$myLng  = (float)($me['longitude'] ?? 0);
+$myCity = trim(strtolower($me['city'] ?? ''));
+$hasCoords = ($myLat != 0 && $myLng != 0);
 
-// Use GET params if provided, otherwise fallback to server-stored "Source of Truth"
-$minAge = isset($_GET['min_age']) ? (int)$_GET['min_age'] : (int)($me['discovery_min_age'] ?? 18);
-$maxAge = isset($_GET['max_age']) ? (int)$_GET['max_age'] : (int)($me['discovery_max_age'] ?? 100);
+// Discovery settings — GET params override stored prefs
+$minAge  = isset($_GET['min_age'])  ? (int)$_GET['min_age']  : (int)($me['discovery_min_age']  ?? 18);
+$maxAge  = isset($_GET['max_age'])  ? (int)$_GET['max_age']  : (int)($me['discovery_max_age']  ?? 100);
 $minDist = isset($_GET['min_dist']) ? (int)$_GET['min_dist'] : (int)($me['discovery_min_dist'] ?? 0);
 $maxDist = isset($_GET['max_dist']) ? (int)$_GET['max_dist'] : (int)($me['discovery_max_dist'] ?? 50);
-$isGlobal = isset($_GET['global_discovery']) 
-    ? ($_GET['global_discovery'] === 'true' || $_GET['global_discovery'] === '1') 
+$isGlobal = isset($_GET['global_discovery'])
+    ? ($_GET['global_discovery'] === 'true' || $_GET['global_discovery'] === '1')
     : (bool)($me['global_discovery'] ?? false);
-$goal     = isset($_GET['relationship_goal']) ? $_GET['relationship_goal'] : null;
-$smoke    = isset($_GET['smoking']) ? $_GET['smoking'] : null;
-$drink    = isset($_GET['drinking']) ? $_GET['drinking'] : null;
-$pets     = isset($_GET['pets']) ? $_GET['pets'] : null;
-$workout  = isset($_GET['workout']) ? $_GET['workout'] : null;
-$diet     = isset($_GET['diet']) ? $_GET['diet'] : null;
-$schedule = isset($_GET['schedule']) ? $_GET['schedule'] : null;
-$comm     = isset($_GET['communication_style']) ? $_GET['communication_style'] : null;// 4. FAST AS FUCK: Refresh rejections every 2 days
-// This removes 'disliked' rows older than 48 hours so they can reappear in discovery.
-$db->query("DELETE FROM swipes WHERE swiper_id = $userId AND action = 'dislike' AND created_at < DATE_SUB(NOW(), INTERVAL 2 DAY)");
 
-// 5. Gender Normalization & Reciprocal Matching
+// Pagination
+$page  = max(1, (int)($_GET['page'] ?? 1));
+$limit = 30;
+$offset = ($page - 1) * $limit;
+
+// 4. Delete disliked swipes older than 2 days (keep this logic, runs async-ish)
+$db->query("DELETE FROM swipes 
+            WHERE swiper_id = $userId 
+              AND action = 'dislike' 
+              AND created_at < DATE_SUB(NOW(), INTERVAL 2 DAY)");
+
+// 5. Gender Normalization
 $myGender = strtolower($me['gender'] ?? '');
-if (in_array($myGender, ['male', 'man', 'm'])) $myGenderNormalized = 'man';
+if (in_array($myGender, ['male', 'man', 'm']))        $myGenderNormalized = 'man';
 elseif (in_array($myGender, ['female', 'woman', 'f'])) $myGenderNormalized = 'woman';
-else $myGenderNormalized = 'other';
+else                                                   $myGenderNormalized = 'other';
 
-$targetGender = ($myGenderNormalized === 'woman') ? 'man' : 'woman';
+$targetGender    = ($myGenderNormalized === 'woman') ? 'man' : 'woman';
 $targetGenderEsc = $db->real_escape_string($targetGender);
 
-// SQL-level distance calculation
-$distSql = "6371 * acos(cos(radians($myLat)) * cos(radians(u.latitude)) * cos(radians(u.longitude) - radians($myLng)) + sin(radians($myLat)) * sin(radians(u.latitude)))";
-if (!$hasCoords) $distSql = "999"; 
+// 6. Distance SQL expression
+$distSql = $hasCoords
+    ? "6371 * acos(
+           cos(radians($myLat)) * cos(radians(u.latitude))
+           * cos(radians(u.longitude) - radians($myLng))
+           + sin(radians($myLat)) * sin(radians(u.latitude))
+       )"
+    : "999";
 
-// 5. Build Discovery Pool (Mutual Interest)
-$latRange = $maxDist / 111.0;
-$lngRange = $maxDist / (111.0 * cos(deg2rad($myLat)) ?: 1);
-
+// 7. Bounding-box pre-filter (cheap lat/lng range check before trig)
 $boundsCondition = "";
 if ($hasCoords && !$isGlobal) {
-    $minL = $myLat - $latRange; $maxL = $myLat + $latRange;
-    $minG = $myLng - $lngRange; $maxG = $myLng + $lngRange;
-    $boundsCondition = "AND u.latitude BETWEEN $minL AND $maxL AND u.longitude BETWEEN $minG AND $maxG";
+    $latRange = $maxDist / 111.0;
+    $lngRange = $maxDist / (111.0 * max(cos(deg2rad($myLat)), 0.0001));
+    $minLat = $myLat - $latRange; $maxLat = $myLat + $latRange;
+    $minLng = $myLng - $lngRange; $maxLng = $myLng + $lngRange;
+    $boundsCondition = "AND u.latitude  BETWEEN $minLat AND $maxLat
+                        AND u.longitude BETWEEN $minLng AND $maxLng";
+    // Exact distance filter applied after fetch (avoids double trig in WHERE + SELECT)
 }
 
-// Additional filters from request
-$extraFilters = "";
-if ($goal) $extraFilters .= " AND u.relationship_goal = '" . $db->real_escape_string($goal) . "'";
-if ($smoke) $extraFilters .= " AND u.lifestyle_smoking = '" . $db->real_escape_string($smoke) . "'";
-if ($drink) $extraFilters .= " AND u.lifestyle_drinking = '" . $db->real_escape_string($drink) . "'";
-if ($pets) $extraFilters .= " AND u.lifestyle_pets = '" . $db->real_escape_string($pets) . "'";
-if ($workout) $extraFilters .= " AND u.lifestyle_workout = '" . $db->real_escape_string($workout) . "'";
-if ($diet) $extraFilters .= " AND u.lifestyle_diet = '" . $db->real_escape_string($diet) . "'";
-if ($schedule) $extraFilters .= " AND u.lifestyle_schedule = '" . $db->real_escape_string($schedule) . "'";
-if ($comm) $extraFilters .= " AND u.communication_style = '" . $db->real_escape_string($comm) . "'";
-
-$candidateQuery = "
-    SELECT u.id, u.full_name, u.age, u.gender, u.looking_for, u.bio, u.interests,
-           u.city, u.latitude, u.longitude, 
-           u.is_verified, u.elo_score, u.last_active, u.job_title, u.company, u.education,
-           u.lifestyle_drinking, u.lifestyle_smoking, u.lifestyle_workout, u.lifestyle_pets,
-           u.lifestyle_diet, u.lifestyle_schedule, u.communication_style, u.relationship_goal,
-           ($distSql) AS distance_km,
-           (SELECT photo_url FROM user_photos WHERE user_id = u.id AND is_dp = 1 LIMIT 1) as dp_url,
-           s.action as previous_action
+// 8. Main candidate query
+//    — blocks / matches use JOINs instead of correlated NOT EXISTS (much faster with indexes)
+//    — dp_url fetched in a single batch query below (not a correlated subquery per row)
+//    — ORDER BY distance so closest always comes first
+$sql = "
+    SELECT
+        u.id, u.full_name, u.age, u.gender, u.looking_for, u.bio,
+        u.interests, u.city, u.latitude, u.longitude,
+        u.is_verified, u.elo_score, u.last_active,
+        u.job_title, u.company, u.education,
+        u.lifestyle_drinking, u.lifestyle_smoking, u.lifestyle_workout,
+        u.lifestyle_pets, u.lifestyle_diet, u.lifestyle_schedule,
+        u.communication_style, u.relationship_goal,
+        ($distSql) AS distance_km,
+        sw.action AS previous_action
     FROM users u
-    LEFT JOIN swipes s ON s.swiper_id = $userId AND s.swiped_id = u.id
-    WHERE u.id != $userId
+    LEFT JOIN swipes  sw  ON sw.swiper_id  = $userId AND sw.swiped_id    = u.id
+    LEFT JOIN blocks  bl  ON (bl.blocker_id = $userId AND bl.blocked_user_id = u.id)
+                          OR (bl.blocker_id = u.id   AND bl.blocked_user_id = $userId)
+    LEFT JOIN matches mt  ON (mt.user1_id   = $userId AND mt.user2_id       = u.id)
+                          OR (mt.user1_id   = u.id   AND mt.user2_id        = $userId)
+    WHERE u.id              != $userId
       AND u.show_in_discovery = 1
-      AND u.age BETWEEN ? AND ?
+      AND u.age              BETWEEN ? AND ?
       AND (
-          (LOWER(u.gender) IN ('man','male','m') AND '$targetGenderEsc' = 'man') OR
-          (LOWER(u.gender) IN ('woman','female','w') AND '$targetGenderEsc' = 'woman')
+            (LOWER(u.gender) IN ('man','male','m')       AND '$targetGenderEsc' = 'man')
+         OR (LOWER(u.gender) IN ('woman','female','w')   AND '$targetGenderEsc' = 'woman')
       )
+      AND bl.blocker_id IS NULL
+      AND mt.user1_id   IS NULL
+      AND (sw.action IS NULL OR sw.action = 'dislike')
       $boundsCondition
-      $extraFilters
-      AND NOT EXISTS (SELECT 1 FROM blocks WHERE (blocker_id = $userId AND blocked_user_id = u.id) OR (blocker_id = u.id AND blocked_user_id = $userId))
-      AND NOT EXISTS (SELECT 1 FROM matches WHERE (user1_id = $userId AND user2_id = u.id) OR (user1_id = u.id AND user2_id = $userId))
-      AND (s.action IS NULL OR s.action = 'dislike')
     ORDER BY " . ($isGlobal ? "u.last_active DESC" : "distance_km ASC") . "
-    LIMIT 150
+    LIMIT $limit OFFSET $offset
 ";
-;
 
-$stmt = $db->prepare($candidateQuery);
+$stmt = $db->prepare($sql);
 $stmt->bind_param('ii', $minAge, $maxAge);
 $stmt->execute();
-$candidateResult = $stmt->get_result();
+$result = $stmt->get_result();
 $stmt->close();
 
-$candidates = [];
-while ($row = $candidateResult->fetch_assoc()) {
-    $scoredItem = runScoring($row, $myLat, $myLng, $myAge, $myInterests, $hasCoords, $isGlobal);
-    // Precision filter for local mode
-    if (!$isGlobal && $hasCoords && isset($row['distance_km'])) {
-        if ($row['distance_km'] < $minDist || $row['distance_km'] > $maxDist) continue;
+$rows = [];
+while ($row = $result->fetch_assoc()) {
+    // Exact distance filter (bounding box can let edge-cases slip through)
+    if (!$isGlobal && $hasCoords) {
+        $d = (float)$row['distance_km'];
+        if ($d < $minDist || $d > $maxDist) continue;
     }
-    $candidates[] = $scoredItem;
+    // Mark recycled rows (previously disliked, now re-surfaced after 2-day window)
+    $row['is_recycled'] = ($row['previous_action'] === 'dislike');
+    $rows[] = $row;
 }
 
-// 8. Sorting (Final refinement in PHP for interest overlap + distance)
-usort($candidates, function($a, $b) {
-    return $b['total_score'] <=> $a['total_score'];
-});
-
-$scored = $candidates;
-
-// 6. Scoring Function (The "Radial Expansion" Engine)
-function runScoring($row, $myLat, $myLng, $myAge, $myInterests, $hasCoords, $isGlobal): array {
-    $totalScore = 10000000; // Base Score
-    $distanceKm = 0.0;
-
-    // --- PRIMARY FACTOR: Radial Distance ---
-    if ($hasCoords && !empty($row['latitude']) && !empty($row['longitude'])) {
-        $distanceKm = haversineKm($myLat, $myLng, (float)$row['latitude'], (float)$row['longitude']);
-        
-        if ($isGlobal) {
-            if ($distanceKm > 500) {
-                // GLOBAL BONUS: If they are far away (>500km), give them a massive lead
-                // Instead of subtracting, we add a huge bonus for the "Discovery" feel
-                $totalScore += 20000000; 
-            } else {
-                // In Global mode, near users aren't penalized as heavily, 
-                // but far ones (>500km) will still sit above them.
-                $totalScore -= ($distanceKm * 1000); 
-            }
-        } else {
-            // ULTIMATE PROXIMITY RANKING (Local Mode): Someone 2km away ALWAYS beats someone 10km away.
-            // 1,000,000 penalty per KM ensures distance is the absolute king of discovery.
-            $totalScore -= ($distanceKm * 1000000); 
-        }
-    } else {
-        $totalScore -= 15000000; // Even bigger penalty for no location
-    }
-
-    // --- SECONDARY FACTOR: Age Proximity ---
-    $ageDiff = abs($myAge - (int)$row['age']);
-    $ageBonus = max(0, 2000000 - ($ageDiff * 100000));
-    $totalScore += $ageBonus;
-
-    // --- TERTIARY FACTORS: Interests & Penalties ---
-    
-    // Interests Overlap (+50,000 per common item)
-    if (!empty($myInterests) && !empty($row['interests'])) {
-        $theirInterests = array_filter(array_map('trim', explode(',', strtolower($row['interests']))));
-        $overlap = count(array_intersect($myInterests, $theirInterests));
-        $totalScore += ($overlap * 50000);
-    }
-
-    // Recycling Penalty (-5,000,000)
-    $isRecycled = ($row['previous_action'] === 'dislike');
-    if ($isRecycled) {
-        $totalScore -= 5000000;
-    }
-
-    // Photo Penalty (-1,000,000 if no DP)
-    $hasPhoto = !empty($row['dp_url']);
-    if (!$hasPhoto) {
-        $totalScore -= 1000000;
-    }
-
-    return [
-        'row'         => $row,
-        'distance_km' => $distanceKm,
-        'total_score' => $totalScore,
-        'is_recycled' => $isRecycled
-    ];
-}
-
-// 9. Batch Fetch Photos for the top candidates (Optimization)
-$topCandidates = array_slice($scored, 0, 150); // Fetch photos for top 150
-$finalIds = array_map(fn($s) => (int)$s['row']['id'], $topCandidates);
-
+// 9. Batch-fetch all photos in ONE query (not N queries)
+$finalIds = array_column($rows, 'id');
 $allPhotos = [];
+$dpMap     = [];
+
 if (!empty($finalIds)) {
-    $idList = implode(',', $finalIds);
-    $photoRes = $db->query("SELECT user_id, photo_url FROM user_photos WHERE user_id IN ($idList) ORDER BY is_dp DESC, created_at ASC");
+    $idList   = implode(',', array_map('intval', $finalIds));
+    $photoRes = $db->query("
+        SELECT user_id, photo_url, is_dp
+        FROM user_photos
+        WHERE user_id IN ($idList)
+        ORDER BY user_id, is_dp DESC, created_at ASC
+    ");
     while ($p = $photoRes->fetch_assoc()) {
         $uid = (int)$p['user_id'];
-        $allPhotos[$uid][] = cloudinaryTransform($p['photo_url'], 'q_auto,f_auto,w_600');
+        $url = cloudinaryTransform($p['photo_url'], 'q_auto,f_auto,w_600');
+        $allPhotos[$uid][] = $url;
+        if ($p['is_dp'] && !isset($dpMap[$uid])) {
+            $dpMap[$uid] = $url;
+        }
     }
 }
 
-// 10. Construct Final JSON Structure
+// 10. Build response
 $finalUsers = [];
-foreach ($topCandidates as $s) {
-    $row = $s['row'];
+foreach ($rows as $row) {
     $uid = (int)$row['id'];
-    
+    $photos = $allPhotos[$uid] ?? [];
+    $dp     = $dpMap[$uid] ?? ($photos[0] ?? '');
+
     $finalUsers[] = [
-        'id'             => $uid,
-        'full_name'      => $row['full_name'],
-        'age'            => (int)$row['age'],
-        'gender'         => $row['gender'] ?? '',
-        'bio'            => $row['bio'] ?? '',
-        'interests'      => !empty($row['interests']) ? (is_array($row['interests']) ? $row['interests'] : explode(',', (string)$row['interests'])) : [],
-        'city'           => $row['city'] ?? '',
-        'latitude'       => (float)($row['latitude'] ?? 0),
-        'longitude'      => (float)($row['longitude'] ?? 0),
-        'is_verified'    => (bool)($row['is_verified'] ?? 0),
-        'dp_url'         => $row['dp_url'] ? cloudinaryTransform($row['dp_url'], 'q_auto,f_auto,w_600') : '',
-        'photos'         => $allPhotos[$uid] ?? [],
-        'distance_km'    => (float)$s['distance_km'],
-        'total_score'    => (int)$s['total_score'],
-        'is_recycled'    => (bool)$s['is_recycled'],
-        'elo_score'      => (int)($row['elo_score'] ?? 1000),
-        'job_title'      => $row['job_title'] ?? '',
-        'company'        => $row['company'] ?? '',
-        'education'      => $row['education'] ?? '',
-        'lifestyle_drinking' => $row['lifestyle_drinking'] ?? '',
-        'lifestyle_smoking'  => $row['lifestyle_smoking'] ?? '',
-        'lifestyle_workout'  => $row['lifestyle_workout'] ?? '',
-        'lifestyle_pets'     => $row['lifestyle_pets'] ?? '',
-        'lifestyle_diet'     => $row['lifestyle_diet'] ?? '',
-        'lifestyle_schedule' => $row['lifestyle_schedule'] ?? '',
+        'id'                  => $uid,
+        'full_name'           => $row['full_name'],
+        'age'                 => (int)$row['age'],
+        'gender'              => $row['gender'] ?? '',
+        'bio'                 => $row['bio'] ?? '',
+        'interests'           => !empty($row['interests'])
+                                    ? (is_array($row['interests'])
+                                        ? $row['interests']
+                                        : array_map('trim', explode(',', $row['interests'])))
+                                    : [],
+        'city'                => $row['city'] ?? '',
+        'latitude'            => (float)($row['latitude'] ?? 0),
+        'longitude'           => (float)($row['longitude'] ?? 0),
+        'is_verified'         => (bool)($row['is_verified'] ?? 0),
+        'dp_url'              => $dp,
+        'photos'              => $photos,
+        'distance_km'         => round((float)$row['distance_km'], 1),
+        'is_recycled'         => (bool)$row['is_recycled'],
+        'elo_score'           => (int)($row['elo_score'] ?? 1000),
+        'job_title'           => $row['job_title'] ?? '',
+        'company'             => $row['company'] ?? '',
+        'education'           => $row['education'] ?? '',
+        'lifestyle_drinking'  => $row['lifestyle_drinking'] ?? '',
+        'lifestyle_smoking'   => $row['lifestyle_smoking'] ?? '',
+        'lifestyle_workout'   => $row['lifestyle_workout'] ?? '',
+        'lifestyle_pets'      => $row['lifestyle_pets'] ?? '',
+        'lifestyle_diet'      => $row['lifestyle_diet'] ?? '',
+        'lifestyle_schedule'  => $row['lifestyle_schedule'] ?? '',
         'communication_style' => $row['communication_style'] ?? '',
-        'relationship_goal' => $row['relationship_goal'] ?? '',
-        'is_active_now'  => (strtotime($row['last_active']) > (time() - 300)) // Active in last 5 mins
+        'relationship_goal'   => $row['relationship_goal'] ?? '',
+        'is_active_now'       => (strtotime($row['last_active']) > (time() - 300)),
     ];
 }
 
@@ -259,19 +211,18 @@ echo json_encode([
     'status'   => 'success',
     'users'    => $finalUsers,
     'metadata' => [
-        'count'       => count($finalUsers),
-        'engine'      => 'Radial-Expansion-v1',
-        'is_recycled' => (count($finalUsers) < 10)
+        'count'    => count($finalUsers),
+        'page'     => $page,
+        'engine'   => 'Distance-First-v2',
     ]
 ]);
 
-// --- Distance Calculation (Haversine) ---
+// ─── Haversine (kept for any future server-side use) ─────────────────────────
 function haversineKm(float $lat1, float $lon1, float $lat2, float $lon2): float {
-    $R = 6371; // Earth Radius
+    $R    = 6371;
     $dLat = deg2rad($lat2 - $lat1);
     $dLon = deg2rad($lon2 - $lon1);
-    $a = sin($dLat/2) * sin($dLat/2) + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLon/2) * sin($dLon/2);
-    $c = 2 * atan2(sqrt($a), sqrt(1-$a));
-    return round($R * $c, 2);
+    $a    = sin($dLat/2) ** 2
+          + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLon/2) ** 2;
+    return round($R * 2 * atan2(sqrt($a), sqrt(1 - $a)), 2);
 }
-?>
