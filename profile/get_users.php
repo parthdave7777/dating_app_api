@@ -51,95 +51,71 @@ if (in_array($myGender, ['male', 'man', 'm'])) $myGenderNormalized = 'man';
 elseif (in_array($myGender, ['female', 'woman', 'f'])) $myGenderNormalized = 'woman';
 else $myGenderNormalized = 'other';
 
-$targetGender = ($myGenderNormalized === 'woman') ? 'man' : 'woman';
+$targetGender = ($myGenderNormalized === 'woman') ? 'man' : 'woman';// 5. Build Discovery Pool (Mutual Interest)
+// Coarse Dist Filter: roughly 1 degree = 111km. For maxDist we use a bounding box.
+$latRange = $maxDist / 111.0;
+$lngRange = $maxDist / (111.0 * cos(deg2rad($myLat)) ?: 1);
 
-// 5. Build Discovery Pool (Mutual Interest)
-// Candidates must want our gender, and we must want theirs.
-$poolConditions = "
-    u.id != $userId
-    AND u.show_in_discovery = 1
-    AND (
-        (LOWER(u.gender) IN ('man','male','m') AND ? = 'man') OR
-        (LOWER(u.gender) IN ('woman','female','w') AND ? = 'woman')
-    )
-    AND u.age >= ? AND u.age <= ?
-    AND u.id NOT IN (
-        SELECT blocked_user_id FROM blocks WHERE blocker_id = ?
-        UNION
-        SELECT blocker_id FROM blocks WHERE blocked_user_id = ?
-        UNION
-        SELECT user1_id FROM matches WHERE user2_id = ?
-        UNION
-        SELECT user2_id FROM matches WHERE user1_id = ?
-    )
-";
-
-if ($goal) {
-    $poolConditions .= " AND u.relationship_goal = '" . $db->real_escape_string($goal) . "'";
-}
-if ($smoke) {
-    $poolConditions .= " AND u.lifestyle_smoking = '" . $db->real_escape_string($smoke) . "'";
-}
-if ($drink) {
-    $poolConditions .= " AND u.lifestyle_drinking = '" . $db->real_escape_string($drink) . "'";
-}
-if ($pets) {
-    $poolConditions .= " AND u.lifestyle_pets = '" . $db->real_escape_string($pets) . "'";
-}
-if ($workout) {
-    $poolConditions .= " AND u.lifestyle_workout = '" . $db->real_escape_string($workout) . "'";
-}
-if ($diet) {
-    $poolConditions .= " AND u.lifestyle_diet = '" . $db->real_escape_string($diet) . "'";
-}
-if ($schedule) {
-    $poolConditions .= " AND u.lifestyle_schedule = '" . $db->real_escape_string($schedule) . "'";
-}
-if ($comm) {
-    $poolConditions .= " AND u.communication_style = '" . $db->real_escape_string($comm) . "'";
+$boundsCondition = "";
+if ($hasCoords && !$isGlobal) {
+    $minL = $myLat - $latRange; $maxL = $myLat + $latRange;
+    $minG = $myLng - $lngRange; $maxG = $myLng + $lngRange;
+    $boundsCondition = "AND u.latitude BETWEEN $minL AND $maxL AND u.longitude BETWEEN $minG AND $maxG";
 }
 
+$targetGenderEsc = $db->real_escape_string($targetGender);
+
+// Additional filters from request
+$extraFilters = "";
+if ($goal) $extraFilters .= " AND u.relationship_goal = '" . $db->real_escape_string($goal) . "'";
+if ($smoke) $extraFilters .= " AND u.lifestyle_smoking = '" . $db->real_escape_string($smoke) . "'";
+if ($drink) $extraFilters .= " AND u.lifestyle_drinking = '" . $db->real_escape_string($drink) . "'";
+if ($pets) $extraFilters .= " AND u.lifestyle_pets = '" . $db->real_escape_string($pets) . "'";
+if ($workout) $extraFilters .= " AND u.lifestyle_workout = '" . $db->real_escape_string($workout) . "'";
+if ($diet) $extraFilters .= " AND u.lifestyle_diet = '" . $db->real_escape_string($diet) . "'";
+if ($schedule) $extraFilters .= " AND u.lifestyle_schedule = '" . $db->real_escape_string($schedule) . "'";
+if ($comm) $extraFilters .= " AND u.communication_style = '" . $db->real_escape_string($comm) . "'";
+
+// Optimized exclusion using NOT EXISTS
 $candidateQuery = "
     SELECT u.id, u.full_name, u.age, u.gender, u.looking_for, u.bio, u.interests,
            u.city, u.latitude, u.longitude, 
            u.is_verified, u.elo_score, u.last_active, u.job_title, u.company, u.education,
            u.lifestyle_drinking, u.lifestyle_smoking, u.lifestyle_workout, u.lifestyle_pets,
            u.lifestyle_diet, u.lifestyle_schedule, u.communication_style, u.relationship_goal,
-           COALESCE(
-               (SELECT photo_url FROM user_photos WHERE user_id = u.id AND is_dp = 1 LIMIT 1),
-               (SELECT photo_url FROM user_photos WHERE user_id = u.id LIMIT 1)
-           ) AS dp_url
+           (SELECT photo_url FROM user_photos WHERE user_id = u.id AND is_dp = 1 LIMIT 1) as dp_url,
+           (SELECT action FROM swipes WHERE swiper_id = $userId AND swiped_id = u.id LIMIT 1) as previous_action
     FROM users u
-    LEFT JOIN swipes s ON s.swiper_id = ? AND s.swiped_id = u.id
-    WHERE $poolConditions
-      AND (s.id IS NULL OR (s.action = 'dislike' AND s.created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)))
-    LIMIT 2000
+    WHERE u.id != $userId
+      AND u.show_in_discovery = 1
+      AND u.age BETWEEN ? AND ?
+      AND (
+          (LOWER(u.gender) IN ('man','male','m') AND '$targetGenderEsc' = 'man') OR
+          (LOWER(u.gender) IN ('woman','female','w') AND '$targetGenderEsc' = 'woman')
+      )
+      $boundsCondition
+      $extraFilters
+      AND NOT EXISTS (SELECT 1 FROM blocks WHERE (blocker_id = $userId AND blocked_user_id = u.id) OR (blocker_id = u.id AND blocked_user_id = $userId))
+      AND NOT EXISTS (SELECT 1 FROM matches WHERE (user1_id = $userId AND user2_id = u.id) OR (user1_id = u.id AND user2_id = $userId))
+      AND NOT EXISTS (SELECT 1 FROM swipes WHERE swiper_id = $userId AND swiped_id = u.id AND (action != 'dislike' OR created_at > DATE_SUB(NOW(), INTERVAL 7 DAY)))
+    LIMIT 1000
 ";
 
 $stmt = $db->prepare($candidateQuery);
-// 4. minAge, 5. maxAge, 6. userId (blocks blocker), 7. userId (blocks blocked), 8. userId (matches 1), 9. userId (matches 2)
-$stmt->bind_param('issiiiiii', $userId, $targetGender, $targetGender, $minAge, $maxAge, $userId, $userId, $userId, $userId);
+$stmt->bind_param('ii', $minAge, $maxAge);
 $stmt->execute();
 $candidateResult = $stmt->get_result();
 $stmt->close();
-if ($candidateResult->num_rows === 0) {
-    error_log("DISCOVERY: No candidates found for User ID $userId. Gender: $targetGender, Age: $minAge-$maxAge");
-}
 
 $candidates = [];
 while ($row = $candidateResult->fetch_assoc()) {
     $scoredItem = runScoring($row, $myLat, $myLng, $myAge, $myInterests, $hasCoords, $isGlobal);
-    
-    if ($hasCoords && !empty($row['latitude'])) {
-        if (!$isGlobal) {
-            // Local mode: apply slider bounds
-            if ($scoredItem['distance_km'] < $minDist || $scoredItem['distance_km'] > $maxDist) {
-                continue;
-            }
+    if (!$isGlobal && $hasCoords && !empty($row['latitude'])) {
+        // Apply slider bounds strictly
+        if ($scoredItem['distance_km'] < $minDist || $scoredItem['distance_km'] > $maxDist) {
+            continue;
         }
-        // Global mode: no distance filter — show everyone worldwide
     }
-
     $candidates[] = $scoredItem;
 }
 
@@ -148,7 +124,7 @@ usort($candidates, function($a, $b) {
     return $b['total_score'] <=> $a['total_score'];
 });
 
-$scored = $candidates; // Alias for compatibility with rest of script
+$scored = $candidates;
 
 // 6. Scoring Function (The "Radial Expansion" Engine)
 function runScoring($row, $myLat, $myLng, $myAge, $myInterests, $hasCoords, $isGlobal): array {
