@@ -75,9 +75,9 @@ if ($result->num_rows === 0) {
 
 $user = $result->fetch_assoc();
 
-// Fetch photos — return as objects with url + is_dp so Flutter can use p['url']
+// Fetch photos — deduplicate by URL to handle previous setup bug
 $photoStmt = $db->prepare(
-    "SELECT photo_url, is_dp FROM user_photos WHERE user_id = ? ORDER BY is_dp DESC, created_at ASC"
+    "SELECT id, photo_url, is_dp FROM user_photos WHERE user_id = ? ORDER BY is_dp DESC, created_at ASC"
 );
 $photoStmt->bind_param('i', $targetId);
 $photoStmt->execute();
@@ -85,29 +85,22 @@ $photoResult = $photoStmt->get_result();
 $photoStmt->close();
 
 $photos      = [];
-$photoUrls   = []; // flat list of URLs
+$photoUrls   = []; 
 $dpUrl       = null;
 $firstUrl    = null;
-$seenIds     = [];
 $seenUrls    = [];
 
 while ($photo = $photoResult->fetch_assoc()) {
-    $photoId = (int)$photo['id'];
     $rawUrl = $photo['photo_url'];
     $optimizedUrl = cloudinaryTransform($rawUrl, 'q_auto,f_auto');
 
-    // Skip if we've already seen this DB row or this exact URL
-    if (in_array($photoId, $seenIds)) continue;
+    // ONLY skip if we've seen this EXACT URL before
     if (in_array($rawUrl, $seenUrls)) continue;
-    $seenIds[] = $photoId;
     $seenUrls[] = $rawUrl;
 
     $isOurDP = (bool)$photo['is_dp'];
     
-    // Only allow ONE photo to be designated as the DP in the final array
-    if ($isOurDP && $dpUrl !== null) {
-        $isOurDP = false; // Downgrade extra DPs to normal photos
-    }
+    if ($isOurDP && $dpUrl !== null) $isOurDP = false; 
 
     $photos[] = [
         'url'   => $optimizedUrl, 
