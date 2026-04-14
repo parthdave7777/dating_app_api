@@ -285,40 +285,25 @@ function sendPush(
 
     $url = 'https://fcm.googleapis.com/v1/projects/' . $projectId . '/messages:send';
 
-    // SPEED OPT 6: Fire FCM push asynchronously so API responds instantly.
-    // IMPROVED: Now supports background execution on BOTH Linux (Render) and Windows.
+    // SPEED OPT 6: Fire FCM push asynchronously so swipe.php responds instantly.
+    // BUG FIX: On Windows XAMPP, exec() with Linux shell syntax (> /dev/null) fails.
+    // Force Option B (standard curl) for Windows local development to ensure reliability.
     $isWindows = strncasecmp(PHP_OS, 'WIN', 3) === 0;
     $disabledFunctions = array_map('trim', explode(',', ini_get('disable_functions')));
-    $execAvailable = function_exists('exec') && !in_array('exec', $disabledFunctions);
+    $execAvailable = !$isWindows && function_exists('exec') && !in_array('exec', $disabledFunctions);
     
     if ($execAvailable) {
+        // Option A — async fire-and-forget
         $payload = json_encode($message);
-        if ($isWindows) {
-            // Option A (Windows Local) — Use 'start /B' to run in background.
-            $token   = $accessToken;
-            // Use temporary file for payload to avoid CLI argument length plateaus
-            $tmpFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'fcm_' . uniqid() . '.json';
-            file_put_contents($tmpFile, $payload);
-            
-            $cmd = "start /B curl -s -X POST " . escapeshellarg($url)
-                 . " -H \"Authorization: Bearer $token\""
-                 . " -H \"Content-Type: application/json\""
-                 . " -d @\"$tmpFile\""
-                 . " > nul 2>&1";
-            exec($cmd);
-            error_log("[FCM] Push dispatched async (Windows) to user $toUserId type=$type");
-        } else {
-            // Option A (Linux/Render) — Standard fire-and-forget background shell command
-            $cmd = "curl -s -X POST " . escapeshellarg($url)
-                 . " -H " . escapeshellarg('Authorization: Bearer ' . $accessToken)
-                 . " -H 'Content-Type: application/json'"
-                 . " -d " . escapeshellarg($payload)
-                 . " > /dev/null 2>&1 &";
-            exec($cmd);
-            error_log("[FCM] Push dispatched async (Linux) to user $toUserId type=$type");
-        }
+        $cmd = "curl -s -X POST " . escapeshellarg($url)
+             . " -H " . escapeshellarg('Authorization: Bearer ' . $accessToken)
+             . " -H 'Content-Type: application/json'"
+             . " -d " . escapeshellarg($payload)
+             . " > /dev/null 2>&1 &";
+        exec($cmd);
+        error_log("[FCM] Push dispatched async to user $toUserId type=$type");
     } else {
-        // Option B — Fallback to blocking curl with high-speed 1s connection timeout
+        // Option B — blocking curl with fast 3s timeout
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_POST           => true,
@@ -328,8 +313,7 @@ function sendPush(
             ],
             CURLOPT_POSTFIELDS     => json_encode($message),
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_CONNECTTIMEOUT => 1, 
-            CURLOPT_TIMEOUT        => 2,
+            CURLOPT_TIMEOUT        => 3,  // Reduced from 8s
         ]);
 
         $result   = curl_exec($ch);
@@ -343,10 +327,10 @@ function sendPush(
             $clearStmt->execute();
             $clearStmt->close();
             error_log("[FCM] Cleared stale token for user $toUserId");
-        } elseif ($httpCode !== 200 && $httpCode !== 0) {
+        } elseif ($httpCode !== 200) {
             error_log("[FCM] Push failed (HTTP $httpCode) for user $toUserId: $result");
         } else {
-            error_log("[FCM] Push sent OK (blocking) to user $toUserId type=$type");
+            error_log("[FCM] Push sent OK to user $toUserId type=$type");
         }
     }
 }

@@ -90,9 +90,6 @@ if (APP_ENV === 'local') {
 }
 
 function getDB(): mysqli {
-    static $conn = null;
-    if ($conn !== null) return $conn;
-
     try {
         mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
         $conn = mysqli_init();
@@ -179,94 +176,38 @@ function getAuthUserId(): int {
     }
 
     if ($userId) {
-        $db = getDB();
-        
-        // SPEED OPT: Combined Status Check
-        // We fetch everything we need (Activity, Credits, Refresh time) in ONE trip.
-        $stmt = $db->prepare("SELECT last_active, credits, last_credit_refresh FROM users WHERE id = ?");
-        $stmt->bind_param('i', $userId);
-        $stmt->execute();
-        $userStatus = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
-        if (!$userStatus) {
-            http_response_code(401);
-            die(json_encode(['status' => 'error', 'message' => 'User no longer exists']));
-        }
-
-        $now = time();
-        $lastActive = $userStatus['last_active'] ? strtotime($userStatus['last_active']) : 0;
-        $lastRefresh = $userStatus['last_credit_refresh'] ? strtotime($userStatus['last_credit_refresh']) : 0;
-        
-        $updates = [];
-        
-        // 1. Throttle Activity/Location update to 5 minutes
-        if ($now - $lastActive > 300) {
-            $updates[] = "last_active = NOW()";
-            if (isset($_SERVER['HTTP_X_LATITUDE']) && isset($_SERVER['HTTP_X_LONGITUDE'])) {
-                $lat = (float)$_SERVER['HTTP_X_LATITUDE'];
-                $lng = (float)$_SERVER['HTTP_X_LONGITUDE'];
-                if ($lat != 0 && $lng != 0) {
-                    $updates[] = "latitude = $lat";
-                    $updates[] = "longitude = $lng";
-                    if (isset($_SERVER['HTTP_X_CITY'])) {
-                        $updates[] = "city = '" . $db->real_escape_string($_SERVER['HTTP_X_CITY']) . "'";
-                    }
-                }
+        // FAST AS FUCK: Auto-sync location from headers (reduces API calls by 50%)
+        if (isset($_SERVER['HTTP_X_LATITUDE']) && isset($_SERVER['HTTP_X_LONGITUDE'])) {
+            $lat = (float)$_SERVER['HTTP_X_LATITUDE'];
+            $lng = (float)$_SERVER['HTTP_X_LONGITUDE'];
+            $city = $_SERVER['HTTP_X_CITY'] ?? null;
+            if ($lat != 0 && $lng != 0) {
+                $db = getDB();
+                $citySql = $city ? ", city = '" . $db->real_escape_string($city) . "'" : "";
+                $db->query("UPDATE users SET latitude = $lat, longitude = $lng, last_active = NOW() $citySql WHERE id = $userId");
             }
         }
-
-        // 2. Auto-Refresh Credits if > 24h passed
-        if ($now - $lastRefresh > 86400) {
-            $updates[] = "credits = " . DAILY_FREE_CREDITS;
-            $updates[] = "last_credit_refresh = NOW()";
-            // Log credit reset
-            $db->query("INSERT INTO credit_logs (user_id, amount, reason) VALUES ($userId, " . DAILY_FREE_CREDITS . ", 'Daily reset')");
+        // Auto-Refresh Credits if more than 24h passed
+        $db = getDB();
+        $stmt = $db->prepare("SELECT last_credit_refresh FROM users WHERE id = ?");
+        $stmt->bind_param('i', $userId);
+        $stmt->execute();
+        $last = $stmt->get_result()->fetch_assoc()['last_credit_refresh'] ?? null;
+        $stmt->close();
+        
+        if ($last) {
+            $lastTime = strtotime($last);
+            if (time() - $lastTime > 86400) { // 24 hours
+                // Reset free credits to 50
+                $db->query("UPDATE users SET credits = " . DAILY_FREE_CREDITS . ", last_credit_refresh = NOW() WHERE id = $userId");
+                $db->query("INSERT INTO credit_logs (user_id, amount, reason) VALUES ($userId, " . DAILY_FREE_CREDITS . ", 'Daily reset')");
+            }
         }
-
-        // Apply all updates in ONE single DB trip
-        if (!empty($updates)) {
-            $db->query("UPDATE users SET " . implode(', ', $updates) . " WHERE id = $userId");
-        }
-
         return $userId;
     }
 
     http_response_code(401);
     die(json_encode(['status' => 'error', 'message' => 'Unauthorized']));
-}
-
-/**
- * SPEED OPT: finish the request to the client but keep the script running
- * for background tasks (Push, ELO, Stats).
- */
-function sendResponseAndContinue(array $response): void {
-    // Add processing time for debugging if not provided
-    if (!isset($response['process_time'])) {
-        $response['process_time'] = round(microtime(true) - ($_SERVER['REQUEST_TIME_FLOAT'] ?? time()), 4) . 's';
-    }
-
-    header('Content-Type: application/json');
-    echo json_encode($response);
-    
-    if (function_exists('fastcgi_finish_request')) {
-        fastcgi_finish_request();
-    } else {
-        // Fallback: Flush and close connection
-        if (ob_get_level()) ob_end_flush();
-        flush();
-    }
-}
-
-if (!function_exists('haversineKm')) {
-    function haversineKm(float $lat1, float $lon1, float $lat2, float $lon2): float {
-        $R    = 6371;
-        $dLat = deg2rad($lat2 - $lat1);
-        $dLon = deg2rad($lon2 - $lon1);
-        $a    = sin($dLat/2) ** 2
-              + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLon/2) ** 2;
-        return round($R * 2 * atan2(sqrt($a), sqrt(1 - $a)), 2);
-    }
 }
 
 function getUserCredits(mysqli $db, int $userId): int {
