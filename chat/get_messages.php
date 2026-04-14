@@ -134,7 +134,7 @@ function buildLatestResponse(mysqli $db, int $matchId, int $userId, int $otherId
     $stmt = $db->prepare("
         SELECT m.id, m.sender_id, m.message, m.type,
                m.is_read, m.is_received, m.is_opened, m.is_view_once,
-               m.is_deleted, m.is_edited, m.deleted_by, m.created_at,
+               m.is_deleted, m.is_edited, m.deleted_by, CONCAT(REPLACE(m.created_at, ' ', 'T'), '+05:30') as created_at,
                m.call_event, m.duration, m.reply_to_id, rm.message AS reply_text
         FROM messages m
         LEFT JOIN messages rm ON rm.id = m.reply_to_id
@@ -167,7 +167,7 @@ function buildBeforeResponse(mysqli $db, int $matchId, int $userId, int $otherId
     $stmt = $db->prepare("
         SELECT m.id, m.sender_id, m.message, m.type,
                m.is_read, m.is_received, m.is_opened, m.is_view_once,
-               m.is_deleted, m.is_edited, m.deleted_by, m.created_at,
+               m.is_deleted, m.is_edited, m.deleted_by, CONCAT(REPLACE(m.created_at, ' ', 'T'), '+05:30') as created_at,
                m.call_event, m.duration, m.reply_to_id, rm.message AS reply_text
         FROM messages m
         LEFT JOIN messages rm ON rm.id = m.reply_to_id
@@ -200,7 +200,7 @@ function buildResponse(mysqli $db, int $matchId, int $userId, int $otherId, int 
     $stmt = $db->prepare("
         SELECT m.id, m.sender_id, m.message, m.type,
                m.is_read, m.is_received, m.is_opened, m.is_view_once,
-               m.is_deleted, m.is_edited, m.deleted_by, m.created_at,
+               m.is_deleted, m.is_edited, m.deleted_by, CONCAT(REPLACE(m.created_at, ' ', 'T'), '+05:30') as created_at,
                m.call_event, m.duration, m.reply_to_id, rm.message AS reply_text
         FROM messages m
         LEFT JOIN messages rm ON rm.id = m.reply_to_id
@@ -222,21 +222,23 @@ function buildResponse(mysqli $db, int $matchId, int $userId, int $otherId, int 
 }
 
 function markRead(mysqli $db, int $matchId, int $userId): void {
+    $now = date('Y-m-d H:i:s');
     $readStmt = $db->prepare(
-        "UPDATE messages SET is_read = 1, read_at = IFNULL(read_at, NOW()), is_received = 1, received_at = IFNULL(received_at, NOW()) 
+        "UPDATE messages SET is_read = 1, read_at = IFNULL(read_at, ?), is_received = 1, received_at = IFNULL(received_at, ?) 
          WHERE match_id = ? AND sender_id != ? AND is_read = 0"
     );
-    $readStmt->bind_param('ii', $matchId, $userId);
+    $readStmt->bind_param('ssii', $now, $now, $matchId, $userId);
     $readStmt->execute();
     $readStmt->close();
 }
 
 function markReceived(mysqli $db, int $matchId, int $userId): void {
+    $now = date('Y-m-d H:i:s');
     $recStmt = $db->prepare(
-        "UPDATE messages SET is_received = 1, received_at = IFNULL(received_at, NOW()) 
+        "UPDATE messages SET is_received = 1, received_at = IFNULL(received_at, ?) 
          WHERE match_id = ? AND sender_id != ? AND is_received = 0"
     );
-    $recStmt->bind_param('ii', $matchId, $userId);
+    $recStmt->bind_param('sii', $now, $matchId, $userId);
     $recStmt->execute();
     $recStmt->close();
 }
@@ -248,7 +250,7 @@ function buildFullResponse(mysqli $db, int $matchId, int $userId, int $otherId):
     $stmt = $db->prepare("
         SELECT m.id, m.sender_id, m.message, m.type,
                m.is_read, m.is_received, m.is_opened, m.is_view_once,
-               m.is_deleted, m.is_edited, m.deleted_by, m.created_at,
+               m.is_deleted, m.is_edited, m.deleted_by, CONCAT(REPLACE(m.created_at, ' ', 'T'), '+05:30') as created_at,
                m.call_event, m.duration, m.reply_to_id, rm.message AS reply_text
         FROM messages m
         LEFT JOIN messages rm ON rm.id = m.reply_to_id

@@ -58,16 +58,17 @@ if ((int)$spamRow['cnt'] >= 100) {
 
 
 // Save swipe (ignore duplicate)
+$now = date('Y-m-d H:i:s');
 $stmt = $db->prepare(
-    "INSERT INTO swipes (swiper_id, swiped_id, action) VALUES (?, ?, ?)
-     ON DUPLICATE KEY UPDATE action = ?, created_at = NOW()"
+    "INSERT INTO swipes (swiper_id, swiped_id, action, created_at) VALUES (?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE action = ?, created_at = ?"
 );
-$stmt->bind_param('iiss', $userId, $swipedUserId, $action, $action);
+$stmt->bind_param('iissss', $userId, $swipedUserId, $action, $now, $action, $now);
 $stmt->execute();
 $stmt->close();
 
 // ── Update last_active for swiper ─────────────────────────
-$db->query("UPDATE users SET last_active = NOW() WHERE id = $userId");
+$db->query("UPDATE users SET last_active = '$now' WHERE id = $userId");
 
 // ── ELO Score Update ──────────────────────────────────────
 // Get both users' current ELO scores
@@ -120,8 +121,8 @@ if ($action === 'like' || $action === 'superlike') {
         $u1 = min($userId, $swipedUserId);
         $u2 = max($userId, $swipedUserId);
 
-        $matchStmt = $db->prepare("INSERT IGNORE INTO matches (user1_id, user2_id) VALUES (?, ?)");
-        $matchStmt->bind_param('ii', $u1, $u2);
+        $matchStmt = $db->prepare("INSERT IGNORE INTO matches (user1_id, user2_id, created_at) VALUES (?, ?, ?)");
+        $matchStmt->bind_param('iis', $u1, $u2, $now);
         $matchStmt->execute();
         $matchId = $db->insert_id;
         if (!$matchId) {

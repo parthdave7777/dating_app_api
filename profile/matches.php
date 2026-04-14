@@ -8,7 +8,7 @@ $db     = getDB();
 $stmt = $db->prepare("
     SELECT
         m.id AS match_id,
-        m.created_at,
+        CONCAT(REPLACE(m.created_at, ' ', 'T'), '+05:30') as created_at,
         CASE WHEN m.user1_id = ? THEN m.user2_id ELSE m.user1_id END AS other_user_id
     FROM matches m
     WHERE m.user1_id = ? OR m.user2_id = ?
@@ -30,7 +30,7 @@ $others = [];
 if (!empty($otherIds)) {
     $idList = implode(',', $otherIds);
     $uRes = $db->query("
-        SELECT u.id, u.full_name, u.age, u.city, u.is_verified,
+        SELECT u.id, u.full_name, u.age, u.city, u.is_verified, u.last_active,
                (SELECT photo_url FROM user_photos WHERE user_id = u.id AND is_dp = 1 LIMIT 1) AS dp_url
         FROM users u WHERE id IN ($idList)
     ");
@@ -54,6 +54,7 @@ foreach ($rows as $row) {
             'age'         => (int)$other['age'],
             'city'        => $other['city'],
             'is_verified' => (bool)$other['is_verified'],
+            'is_active_now' => (strtotime($other['last_active'] ?? '') > (time() - 300)),
             // Optimized DP thumbnail for match list
             'dp_url'      => cloudinaryTransform($other['dp_url'] ?? '', 'w_300,c_thumb,g_face,q_auto,f_auto'),
         ],
