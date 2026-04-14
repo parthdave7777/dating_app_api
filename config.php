@@ -15,6 +15,9 @@ header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS, DELETE, PUT");
 header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
 
+// Set local timezone for all PHP operations
+date_default_timezone_set('Asia/Kolkata');
+
 // --- ENVIRONMENT VARIABLES (.env) ---
 if (file_exists(__DIR__ . '/vendor/autoload.php')) {
     require_once __DIR__ . '/vendor/autoload.php';
@@ -101,6 +104,7 @@ function getDB(): mysqli {
 
         if (!$success) throw new Exception("Connection failed: " . mysqli_connect_error());
         $conn->set_charset('utf8mb4');
+        $conn->query("SET time_zone = '+05:30'");
         return $conn;
     } catch (Exception $e) {
         http_response_code(500);
