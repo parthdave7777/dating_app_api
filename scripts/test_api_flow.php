@@ -34,9 +34,13 @@ function callApi($url, $payload = [], $token = null) {
     
     if ($err) echo " (CURL ERROR: $err) ";
     
+    $jsonData = json_decode($response, true);
+    $procTime = $jsonData['process_time'] ?? ($jsonData['data']['process_time'] ?? 'N/A');
+
     return [
-        'data' => json_decode($response, true),
+        'data' => $jsonData,
         'time' => round(($end - $start), 3),
+        'proc' => $procTime,
         'code' => $httpCode
     ];
 }
@@ -74,43 +78,43 @@ $setA = callApi("profile/setup.php", [
     'full_name' => 'User A (Test)', 'age' => 25, 'gender' => 'man', 'looking_for' => 'woman',
     'bio' => 'Benchmarking test', 'latitude' => 12.9716, 'longitude' => 77.5946, 'city' => 'Bengaluru'
 ], $tokenA);
-echo $setA['code'] === 200 ? "SUCCESS" : "FAILED";
-echo " (" . $setA['time'] . "s)\n";
+    echo $setA['code'] === 200 ? "SUCCESS" : "FAILED";
+    echo " (" . $setA['time'] . "s) [Proc: " . $setA['proc'] . "]\n";
 
-echo "Setting up User B profile (Female)... ";
-$setB = callApi("profile/setup.php", [
-    'full_name' => 'User B (Test)', 'age' => 23, 'gender' => 'woman', 'looking_for' => 'man',
-    'bio' => 'Benchmarking test', 'latitude' => 12.9716, 'longitude' => 77.5946, 'city' => 'Bengaluru'
-], $tokenB);
-echo $setB['code'] === 200 ? "SUCCESS" : "FAILED";
-echo " (" . $setB['time'] . "s)\n\n";
+    echo "Setting up User B profile (Female)... ";
+    $setB = callApi("profile/setup.php", [
+        'full_name' => 'User B (Test)', 'age' => 23, 'gender' => 'woman', 'looking_for' => 'man',
+        'bio' => 'Benchmarking test', 'latitude' => 12.9716, 'longitude' => 77.5946, 'city' => 'Bengaluru'
+    ], $tokenB);
+    echo $setB['code'] === 200 ? "SUCCESS" : "FAILED";
+    echo " (" . $setB['time'] . "s) [Proc: " . $setB['proc'] . "]\n\n";
 
-// 3. DISCOVERY & INTERACTION
-echo "User A views User B's profile... ";
-$viewB = callApi("profile/get_profile.php?target_id=$uidB", [], $tokenA);
-echo $viewB['code'] === 200 ? "SUCCESS" : "FAILED";
-echo " (" . $viewB['time'] . "s)\n";
+    // 3. DISCOVERY & INTERACTION
+    echo "User A views User B's profile... ";
+    $viewB = callApi("profile/get_profile.php?target_id=$uidB", [], $tokenA);
+    echo $viewB['code'] === 200 ? "SUCCESS" : "FAILED";
+    echo " (" . $viewB['time'] . "s) [Proc: " . $viewB['proc'] . "]\n";
 
-echo "User A swipes right on User B... ";
-$swipeA = callApi("profile/swipe.php", ['target_id' => $uidB, 'action' => 'like'], $tokenA);
-echo $swipeA['code'] === 200 ? "SUCCESS" : "FAILED";
-echo " (" . $swipeA['time'] . "s)\n";
+    echo "User A swipes right on User B... ";
+    $swipeA = callApi("profile/swipe.php", ['target_id' => $uidB, 'action' => 'like'], $tokenA);
+    echo $swipeA['code'] === 200 ? "SUCCESS" : "FAILED";
+    echo " (" . $swipeA['time'] . "s) [Proc: " . $swipeA['proc'] . "]\n";
 
-echo "User B swipes right on User A (Match!)... ";
-$swipeB = callApi("profile/swipe.php", ['target_id' => $uidA, 'action' => 'like'], $tokenB);
-echo $swipeB['code'] === 200 ? "SUCCESS" : "FAILED";
-echo " (" . $swipeB['time'] . "s)\n";
+    echo "User B swipes right on User A (Match!)... ";
+    $swipeB = callApi("profile/swipe.php", ['target_id' => $uidA, 'action' => 'like'], $tokenB);
+    echo $swipeB['code'] === 200 ? "SUCCESS" : "FAILED";
+    echo " (" . $swipeB['time'] . "s) [Proc: " . $swipeB['proc'] . "]\n";
 
-echo "User A sends a compliment to User B... ";
-$compA = callApi("compliments/send.php", ['receiver_id' => $uidB, 'message' => 'Speed test!'], $tokenA);
-echo $compA['code'] === 200 ? "SUCCESS" : "FAILED";
-echo " (" . $compA['time'] . "s)\n\n";
+    echo "User A sends a compliment to User B... ";
+    $compA = callApi("compliments/send.php", ['receiver_id' => $uidB, 'message' => 'Speed test!'], $tokenA);
+    echo $compA['code'] === 200 ? "SUCCESS" : "FAILED";
+    echo " (" . $compA['time'] . "s) [Proc: " . $compA['proc'] . "]\n\n";
 
-// 4. CHAT
-echo "User A sends a chat message to User B... ";
-$msgA = callApi("chat/send_message.php", ['receiver_id' => $uidB, 'message' => 'How fast was that?'], $tokenA);
-echo $msgA['code'] === 200 ? "SUCCESS" : "FAILED";
-echo " (" . $msgA['time'] . "s)\n\n";
+    // 4. CHAT
+    echo "User A sends a chat message to User B... ";
+    $msgA = callApi("chat/send_message.php", ['receiver_id' => $uidB, 'message' => 'How fast was that?'], $tokenA);
+    echo $msgA['code'] === 200 ? "SUCCESS" : "FAILED";
+    echo " (" . $msgA['time'] . "s) [Proc: " . $msgA['proc'] . "]\n\n";
 
 echo "--- BENCHMARK COMPLETE ---\n";
 ?>

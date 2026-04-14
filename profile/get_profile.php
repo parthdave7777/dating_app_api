@@ -17,11 +17,24 @@ if (isset($_GET['target_id']) && (int)$_GET['target_id'] !== $userId) {
     $targetId = $userId;
 }
 
-// SPEED OPT 1: COMBINED QUERY (User Data + Match Status + My Location)
+// 🚀 ULTRA-SPEED: SINGLE TRIP QUERY
+// We fetch Profile + Photos + Posts + Match + Viewer Location in ONE single trip to the DB.
+// This is the fastest possible way to load a profile when your DB is far away.
 $sql = "
-    SELECT u.*, 
-           m.id AS match_id,
-           me.latitude AS my_lat, me.longitude AS my_lng
+    SELECT 
+        u.*, 
+        m.id AS match_id,
+        me.latitude AS my_lat, me.longitude AS my_lng,
+        (
+            SELECT JSON_ARRAYAGG(JSON_OBJECT('url', photo_url, 'is_dp', is_dp))
+            FROM user_photos 
+            WHERE user_id = u.id
+        ) AS photos_json,
+        (
+            SELECT JSON_ARRAYAGG(JSON_OBJECT('id', id, 'photo_url', photo_url, 'caption', caption, 'created_at', created_at))
+            FROM user_posts
+            WHERE user_id = u.id
+        ) AS posts_json
     FROM users u
     LEFT JOIN matches m ON (m.user1_id = $userId AND m.user2_id = u.id) 
                         OR (m.user1_id = u.id AND m.user2_id = $userId)
@@ -32,64 +45,50 @@ $sql = "
 $stmt = $db->prepare($sql);
 $stmt->bind_param('i', $targetId);
 $stmt->execute();
-$user = $stmt->get_result()->fetch_assoc();
+$row = $stmt->get_result()->fetch_assoc();
 $stmt->close();
 
-if (!$user) {
+if (!$row) {
     echo json_encode(['status' => 'error', 'message' => 'User not found']);
     exit();
 }
 
-$isMatch = !empty($user['match_id']);
-$matchId = $isMatch ? (int)$user['match_id'] : null;
-$myLat   = (float)($user['my_lat'] ?? 0);
-$myLng   = (float)($user['my_lng'] ?? 0);
+// Parse JSON results
+$photos = json_decode($row['photos_json'] ?? '[]', true);
+$posts  = json_decode($row['posts_json']  ?? '[]', true);
 
-// Calculate distance
+// Deduplicate and Transform photos (Cloudinary)
+$finalPhotos = []; $seenUrls = [];
+foreach ($photos as $p) {
+    $url = cloudinaryTransform($p['url'], 'q_auto,f_auto');
+    if (in_array($url, $seenUrls)) continue;
+    $finalPhotos[] = ['url' => $url, 'is_dp' => (bool)$p['is_dp']];
+    $seenUrls[] = $url;
+}
+
+// Distance calculation
 $distance = null;
-if ($userId !== $targetId && $myLat && $user['latitude']) {
-    $distance = haversineKm($myLat, $myLng, (float)$user['latitude'], (float)$user['longitude']);
+if ($userId !== $targetId && $row['my_lat'] && $row['latitude']) {
+    $distance = haversineKm((float)$row['my_lat'], (float)$row['my_lng'], (float)$row['latitude'], (float)$row['longitude']);
 }
 
-// Fetch photos
-$photos = []; $photoUrls = [];
-$photoResult = $db->query("SELECT photo_url, is_dp FROM user_photos WHERE user_id = $targetId ORDER BY is_dp DESC, created_at ASC");
-while ($p = $photoResult->fetch_assoc()) {
-    $url = cloudinaryTransform($p['photo_url'], 'q_auto,f_auto');
-    if (in_array($url, $photoUrls)) continue;
-    $photos[] = ['url' => $url, 'is_dp' => (bool)$p['is_dp']];
-    $photoUrls[] = $url;
-}
-
-// Fetch posts
-$posts = [];
-$postRes = $db->query("SELECT id, photo_url, caption, created_at FROM user_posts WHERE user_id = $targetId ORDER BY created_at DESC");
-while ($p = $postRes->fetch_assoc()) {
-    $posts[] = $p;
-}
-
-// ─── RESPOND IMMEDIATELY (Ultra-Speed) ─────────────────────
-// The user gets the profile data instantly.
+// ─── RESPOND IMMEDIATELY ─────────────────────
 sendResponseAndContinue([
     'status' => 'success',
     'data' => [
-        'profile'  => $user,
-        'photos'   => $photos,
+        'profile'  => $row,
+        'photos'   => $finalPhotos,
         'posts'    => $posts,
-        'is_match' => $isMatch,
-        'match_id' => $matchId,
+        'is_match' => !empty($row['match_id']),
+        'match_id' => $row['match_id'] ? (int)$row['match_id'] : null,
         'distance' => $distance
     ]
 ]);
 
-// ─── BACKGROUND PROCESSING (View Notifications & Stats) ──────
+// ─── BACKGROUND PROCESSING ─────────────────────
 if ($targetId !== $userId) {
-    // 1. Record View (Atomic)
-    $db->query("INSERT INTO profile_views (viewer_id, viewed_id)
-                VALUES ($userId, $targetId)
-                ON DUPLICATE KEY UPDATE viewed_at = NOW()");
-
-    // 2. Notification (Throttled)
+    // Record View and Send Notification in background
+    $db->query("INSERT INTO profile_views (viewer_id, viewed_id) VALUES ($userId, $targetId) ON DUPLICATE KEY UPDATE viewed_at = NOW()");
     require_once __DIR__ . '/../notifications/send_push.php';
     sendProfileViewNotification($db, $userId, $targetId);
 }
