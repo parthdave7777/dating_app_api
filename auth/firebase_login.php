@@ -67,6 +67,7 @@ $result = $stmt->get_result();
 $stmt->close();
 
 $isNewUser = false;
+$setupCompleted = false;
 
 if ($result->num_rows === 0) {
     $isNewUser = true;
@@ -78,7 +79,8 @@ if ($result->num_rows === 0) {
 } else {
     $user    = $result->fetch_assoc();
     $userId  = (int) $user['id'];
-    $isNewUser = ((int) $user['profile_complete'] === 0);
+    $isNewUser      = ((int) $user['profile_complete'] === 0);
+    $setupCompleted = (((int)($user['setup_completed'] ?? 0)) === 1);
 }
 
 $token = generateToken($userId);
@@ -93,8 +95,9 @@ $activeDb->close();
 $db->close();
 
 echo json_encode([
-    'status'      => 'success',
-    'token'       => $token,
-    'user_id'     => $userId,
-    'is_new_user' => $isNewUser,
+    'status'          => 'success',
+    'token'           => $token,
+    'user_id'         => $userId,
+    'is_new_user'     => (bool)$isNewUser,
+    'setup_completed' => (bool)$setupCompleted,
 ]);
