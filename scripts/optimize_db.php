@@ -19,7 +19,28 @@ $indexes = [
     'matches'       => ['idx_user1_user2', '(user1_id, user2_id)'],
 ];
 
+// Special Table Modifications (ENUMs, etc.)
+$modifications = [
+    'swipes' => "ALTER TABLE swipes MODIFY COLUMN action enum('like','dislike','superlike','compliment') NOT NULL"
+];
+
 echo "--- DATING APP DB OPTIMIZER ---\n";
+
+// ─── 1. Run Schema Modifications ────────────────────────────
+foreach ($modifications as $table => $sql) {
+    echo "Updating schema for $table... ";
+    try {
+        if ($db->query($sql)) {
+            echo "SUCCESS.\n";
+        } else {
+            echo "FAILED: " . $db->error . "\n";
+        }
+    } catch (Exception $e) {
+        echo "ALREADY UPDATED or ERROR: " . $e->getMessage() . "\n";
+    }
+}
+
+// ─── 2. Run Index Optimizations ────────────────────────────
 
 foreach ($indexes as $table => $data) {
     list($indexName, $definition) = $data;

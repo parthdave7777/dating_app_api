@@ -181,53 +181,54 @@ function getAuthUserId(): int {
     if ($userId) {
         $db = getDB();
         
-        // SPEED OPT: Throttled Location/Active sync (Skip if updated < 5 mins ago)
-        // This eliminates redundant DB writes on every single API request.
-        if (isset($_SERVER['HTTP_X_LATITUDE']) && isset($_SERVER['HTTP_X_LONGITUDE'])) {
-            $lat = (float)$_SERVER['HTTP_X_LATITUDE'];
-            $lng = (float)$_SERVER['HTTP_X_LONGITUDE'];
-            $city = $_SERVER['HTTP_X_CITY'] ?? null;
-            if ($lat != 0 && $lng != 0) {
-                $citySql = $city ? ", city = '" . $db->real_escape_string($city) . "'" : "";
-                // Atomic conditional update to minimize write locking
-                $db->query("
-                    UPDATE users SET 
-                        latitude = $lat, 
-                        longitude = $lng, 
-                        last_active = NOW() 
-                        $citySql 
-                    WHERE id = $userId 
-                      AND (last_active IS NULL OR last_active < DATE_SUB(NOW(), INTERVAL 5 MINUTE))
-                ");
-            }
-        } else {
-            // Even without location headers, throttle the "last_active" timestamp update
-            $db->query("
-                UPDATE users SET last_active = NOW() 
-                WHERE id = $userId 
-                  AND (last_active IS NULL OR last_active < DATE_SUB(NOW(), INTERVAL 5 MINUTE))
-            ");
+        // SPEED OPT: Combined Status Check
+        // We fetch everything we need (Activity, Credits, Refresh time) in ONE trip.
+        $stmt = $db->prepare("SELECT last_active, credits, last_credit_refresh FROM users WHERE id = ?");
+        $stmt->bind_param('i', $userId);
+        $stmt->execute();
+        $userStatus = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        if (!$userStatus) {
+            http_response_code(401);
+            die(json_encode(['status' => 'error', 'message' => 'User no longer exists']));
         }
 
-        // Auto-Refresh Credits if more than 24h passed
-        // SPEED OPT: Prevent multiple redundancy checks in the same execution
-        static $creditRefreshed = false;
-        if (!$creditRefreshed) {
-            $creditRefreshed = true;
-            $stmt = $db->prepare("SELECT last_credit_refresh FROM users WHERE id = ?");
-            $stmt->bind_param('i', $userId);
-            $stmt->execute();
-            $last = $stmt->get_result()->fetch_assoc()['last_credit_refresh'] ?? null;
-            $stmt->close();
-            
-            if ($last) {
-                $lastTime = strtotime($last);
-                if (time() - $lastTime > 86400) { // 24 hours
-                    $db->query("UPDATE users SET credits = " . DAILY_FREE_CREDITS . ", last_credit_refresh = NOW() WHERE id = $userId");
-                    $db->query("INSERT INTO credit_logs (user_id, amount, reason) VALUES ($userId, " . DAILY_FREE_CREDITS . ", 'Daily reset')");
+        $now = time();
+        $lastActive = $userStatus['last_active'] ? strtotime($userStatus['last_active']) : 0;
+        $lastRefresh = $userStatus['last_credit_refresh'] ? strtotime($userStatus['last_credit_refresh']) : 0;
+        
+        $updates = [];
+        
+        // 1. Throttle Activity/Location update to 5 minutes
+        if ($now - $lastActive > 300) {
+            $updates[] = "last_active = NOW()";
+            if (isset($_SERVER['HTTP_X_LATITUDE']) && isset($_SERVER['HTTP_X_LONGITUDE'])) {
+                $lat = (float)$_SERVER['HTTP_X_LATITUDE'];
+                $lng = (float)$_SERVER['HTTP_X_LONGITUDE'];
+                if ($lat != 0 && $lng != 0) {
+                    $updates[] = "latitude = $lat";
+                    $updates[] = "longitude = $lng";
+                    if (isset($_SERVER['HTTP_X_CITY'])) {
+                        $updates[] = "city = '" . $db->real_escape_string($_SERVER['HTTP_X_CITY']) . "'";
+                    }
                 }
             }
         }
+
+        // 2. Auto-Refresh Credits if > 24h passed
+        if ($now - $lastRefresh > 86400) {
+            $updates[] = "credits = " . DAILY_FREE_CREDITS;
+            $updates[] = "last_credit_refresh = NOW()";
+            // Log credit reset
+            $db->query("INSERT INTO credit_logs (user_id, amount, reason) VALUES ($userId, " . DAILY_FREE_CREDITS . ", 'Daily reset')");
+        }
+
+        // Apply all updates in ONE single DB trip
+        if (!empty($updates)) {
+            $db->query("UPDATE users SET " . implode(', ', $updates) . " WHERE id = $userId");
+        }
+
         return $userId;
     }
 
