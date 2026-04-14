@@ -11,8 +11,11 @@ $db->query("UPDATE users SET last_active = NOW() WHERE id = $userId");
 // 2. Clear Expired Boosts
 $db->query("UPDATE users SET is_new_user_boost = 0 WHERE new_user_boost_expires < NOW() AND is_new_user_boost = 1");
 
-// 3. Fetch Current User Details
-$meStmt = $db->prepare("SELECT age, gender, latitude, longitude, interests, city FROM users WHERE id = ?");
+// 3. Fetch Current User Details & Saved Discovery Settings
+$meStmt = $db->prepare("SELECT age, gender, latitude, longitude, interests, city, 
+                             discovery_min_age, discovery_max_age, 
+                             discovery_min_dist, discovery_max_dist, global_discovery 
+                       FROM users WHERE id = ?");
 $meStmt->bind_param('i', $userId);
 $meStmt->execute();
 $me = $meStmt->get_result()->fetch_assoc();
@@ -31,11 +34,14 @@ $myCity      = trim(strtolower($me['city'] ?? ''));
 $myInterests = array_filter(array_map('trim', explode(',', strtolower($me['interests'] ?? ''))));
 $hasCoords   = ($myLat != 0 && $myLng != 0);
 
-$minAge = isset($_GET['min_age']) ? (int)$_GET['min_age'] : 18;
-$maxAge = isset($_GET['max_age']) ? (int)$_GET['max_age'] : 100;
-$minDist = isset($_GET['min_dist']) ? (int)$_GET['min_dist'] : 0;
-$maxDist = isset($_GET['max_dist']) ? (int)$_GET['max_dist'] : 50;
-$isGlobal = isset($_GET['global_discovery']) ? ($_GET['global_discovery'] === 'true' || $_GET['global_discovery'] === '1') : true;
+// Use GET params if provided, otherwise fallback to server-stored "Source of Truth"
+$minAge = isset($_GET['min_age']) ? (int)$_GET['min_age'] : (int)($me['discovery_min_age'] ?? 18);
+$maxAge = isset($_GET['max_age']) ? (int)$_GET['max_age'] : (int)($me['discovery_max_age'] ?? 100);
+$minDist = isset($_GET['min_dist']) ? (int)$_GET['min_dist'] : (int)($me['discovery_min_dist'] ?? 0);
+$maxDist = isset($_GET['max_dist']) ? (int)$_GET['max_dist'] : (int)($me['discovery_max_dist'] ?? 50);
+$isGlobal = isset($_GET['global_discovery']) 
+    ? ($_GET['global_discovery'] === 'true' || $_GET['global_discovery'] === '1') 
+    : (bool)($me['global_discovery'] ?? false);
 $goal     = isset($_GET['relationship_goal']) ? $_GET['relationship_goal'] : null;
 $smoke    = isset($_GET['smoking']) ? $_GET['smoking'] : null;
 $drink    = isset($_GET['drinking']) ? $_GET['drinking'] : null;
@@ -114,10 +120,11 @@ $stmt->close();
 
 $candidates = [];
 while ($row = $candidateResult->fetch_assoc()) {
-    $scoredItem = runScoring($row, $myLat, $myLng, $myAge, $myInterests, $hasCoords, $isGlobal);
-    // Precision filter for local mode
-    if (!$isGlobal && $hasCoords && isset($row['distance_km'])) {
-        if ($row['distance_km'] < $minDist || $row['distance_km'] > $maxDist) continue;
+    $dist = (float)($row['distance_km'] ?? 0);
+    $scoredItem = runScoring($row, $dist, $myAge, $myInterests, $isGlobal);
+    // Precision filter for local mode (Already mostly filtered by Bounding Box in SQL)
+    if (!$isGlobal && $hasCoords) {
+        if ($dist < $minDist || $dist > $maxDist) continue;
     }
     $candidates[] = $scoredItem;
 }
@@ -129,16 +136,11 @@ usort($candidates, function($a, $b) {
 
 $scored = $candidates;
 
-// 6. Scoring Function (The "Radial Expansion" Engine)
-function runScoring($row, $myLat, $myLng, $myAge, $myInterests, $hasCoords, $isGlobal): array {
+function runScoring($row, $distanceKm, $myAge, $myInterests, $isGlobal): array {
     $totalScore = 10000000; // Base Score
-    $distanceKm = 0.0;
 
-    // --- PRIMARY FACTOR: Radial Distance ---
-    if ($hasCoords && !empty($row['latitude']) && !empty($row['longitude'])) {
-        $distanceKm = haversineKm($myLat, $myLng, (float)$row['latitude'], (float)$row['longitude']);
-        
-        if ($isGlobal) {
+    // --- PRIMARY FACTOR: Radial Distance (Fast! Use pre-computed) ---
+    if ($distanceKm > 0) {
             if ($distanceKm > 500) {
                 // GLOBAL BONUS: If they are far away (>500km), give them a massive lead
                 // Instead of subtracting, we add a huge bonus for the "Discovery" feel

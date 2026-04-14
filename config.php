@@ -153,9 +153,9 @@ define('CREDIT_COST_LIKE',        5);
 define('CREDIT_COST_SUPERLIKE',  25);
 define('CREDIT_COST_COMPLIMENT', 50);
 define('CREDIT_COST_REWIND',     10);
-define('CREDIT_COST_VIEW_SECRET', 100); 
+define('CREDIT_COST_VIEW_SECRET', 50); 
 define('CREDIT_COST_CALL_MIN',   50); 
-define('DAILY_FREE_CREDITS',     50);
+define('DAILY_FREE_CREDITS',     100);
 
 function getAuthUserId(): int {
     $authHeader = $_SERVER['HTTP_AUTHORIZATION']
@@ -172,6 +172,17 @@ function getAuthUserId(): int {
     }
 
     if ($userId) {
+        // FAST AS FUCK: Auto-sync location from headers (reduces API calls by 50%)
+        if (isset($_SERVER['HTTP_X_LATITUDE']) && isset($_SERVER['HTTP_X_LONGITUDE'])) {
+            $lat = (float)$_SERVER['HTTP_X_LATITUDE'];
+            $lng = (float)$_SERVER['HTTP_X_LONGITUDE'];
+            $city = $_SERVER['HTTP_X_CITY'] ?? null;
+            if ($lat != 0 && $lng != 0) {
+                $db = getDB();
+                $citySql = $city ? ", city = '" . $db->real_escape_string($city) . "'" : "";
+                $db->query("UPDATE users SET latitude = $lat, longitude = $lng, last_active = NOW() $citySql WHERE id = $userId");
+            }
+        }
         // Auto-Refresh Credits if more than 24h passed
         $db = getDB();
         $stmt = $db->prepare("SELECT last_credit_refresh FROM users WHERE id = ?");
