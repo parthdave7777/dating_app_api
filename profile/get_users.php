@@ -65,6 +65,10 @@ if ($hasCoords && !$isGlobal) {
 
 $targetGenderEsc = $db->real_escape_string($targetGender);
 
+// SQL-level distance and scoring factors for massive speed boost
+$distSql = "6371 * acos(cos(radians($myLat)) * cos(radians(u.latitude)) * cos(radians(u.longitude) - radians($myLng)) + sin(radians($myLat)) * sin(radians(u.latitude)))";
+if (!$hasCoords) $distSql = "999"; // Fallback if no location
+
 // Additional filters from request
 $extraFilters = "";
 if ($goal) $extraFilters .= " AND u.relationship_goal = '" . $db->real_escape_string($goal) . "'";
@@ -76,15 +80,15 @@ if ($diet) $extraFilters .= " AND u.lifestyle_diet = '" . $db->real_escape_strin
 if ($schedule) $extraFilters .= " AND u.lifestyle_schedule = '" . $db->real_escape_string($schedule) . "'";
 if ($comm) $extraFilters .= " AND u.communication_style = '" . $db->real_escape_string($comm) . "'";
 
-// Optimized exclusion using NOT EXISTS
+// 5. Optimized Query: Math shifted to SQL for sub-second responses
 $candidateQuery = "
     SELECT u.id, u.full_name, u.age, u.gender, u.looking_for, u.bio, u.interests,
            u.city, u.latitude, u.longitude, 
            u.is_verified, u.elo_score, u.last_active, u.job_title, u.company, u.education,
            u.lifestyle_drinking, u.lifestyle_smoking, u.lifestyle_workout, u.lifestyle_pets,
            u.lifestyle_diet, u.lifestyle_schedule, u.communication_style, u.relationship_goal,
-           (SELECT photo_url FROM user_photos WHERE user_id = u.id AND is_dp = 1 LIMIT 1) as dp_url,
-           (SELECT action FROM swipes WHERE swiper_id = $userId AND swiped_id = u.id LIMIT 1) as previous_action
+           ($distSql) AS distance_km,
+           (SELECT photo_url FROM user_photos WHERE user_id = u.id AND is_dp = 1 LIMIT 1) as dp_url
     FROM users u
     WHERE u.id != $userId
       AND u.show_in_discovery = 1
@@ -98,7 +102,8 @@ $candidateQuery = "
       AND NOT EXISTS (SELECT 1 FROM blocks WHERE (blocker_id = $userId AND blocked_user_id = u.id) OR (blocker_id = u.id AND blocked_user_id = $userId))
       AND NOT EXISTS (SELECT 1 FROM matches WHERE (user1_id = $userId AND user2_id = u.id) OR (user1_id = u.id AND user2_id = $userId))
       AND NOT EXISTS (SELECT 1 FROM swipes WHERE swiper_id = $userId AND swiped_id = u.id AND (action != 'dislike' OR created_at > DATE_SUB(NOW(), INTERVAL 7 DAY)))
-    LIMIT 1000
+    ORDER BY " . ($isGlobal ? "u.last_active DESC" : "distance_km ASC") . "
+    LIMIT 200
 ";
 
 $stmt = $db->prepare($candidateQuery);
@@ -110,16 +115,14 @@ $stmt->close();
 $candidates = [];
 while ($row = $candidateResult->fetch_assoc()) {
     $scoredItem = runScoring($row, $myLat, $myLng, $myAge, $myInterests, $hasCoords, $isGlobal);
-    if (!$isGlobal && $hasCoords && !empty($row['latitude'])) {
-        // Apply slider bounds strictly
-        if ($scoredItem['distance_km'] < $minDist || $scoredItem['distance_km'] > $maxDist) {
-            continue;
-        }
+    // Precision filter for local mode
+    if (!$isGlobal && $hasCoords && isset($row['distance_km'])) {
+        if ($row['distance_km'] < $minDist || $row['distance_km'] > $maxDist) continue;
     }
     $candidates[] = $scoredItem;
 }
 
-// 8. Sorting (Strict descending by total_score)
+// 8. Sorting (Final refinement in PHP for interest overlap + distance)
 usort($candidates, function($a, $b) {
     return $b['total_score'] <=> $a['total_score'];
 });
