@@ -97,11 +97,12 @@ if ($isMatch) {
     sendComplimentNotification($db, $userId, $receiverId, $message);
 }
 
-$db->close();
-
-echo json_encode([
+$response = [
     'status' => 'success',
     'is_match' => $isMatch,
     'match_id' => $matchId,
     'new_balance' => getUserCredits($db, $userId)
-]);
+];
+
+$db->close();
+echo json_encode($response);
