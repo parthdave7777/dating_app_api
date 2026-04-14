@@ -60,7 +60,7 @@ if (!file_exists($serviceAccountPath)) {
 handleUser:
 $db = getDB();
 
-$stmt = $db->prepare("SELECT id, profile_complete FROM users WHERE phone_number = ?");
+$stmt = $db->prepare("SELECT id, profile_complete, setup_completed FROM users WHERE phone_number = ?");
 $stmt->bind_param('s', $verifiedPhone);
 $stmt->execute();
 $result = $stmt->get_result();

@@ -50,7 +50,7 @@ try {
     }
 
     // Find or create user
-    $stmt = $db->prepare("SELECT id, profile_complete FROM users WHERE phone_number = ?");
+    $stmt = $db->prepare("SELECT id, profile_complete, setup_completed FROM users WHERE phone_number = ?");
     $stmt->bind_param('s', $phone);
     $stmt->execute();
     $userResult = $stmt->get_result();
