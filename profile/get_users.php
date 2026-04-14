@@ -5,9 +5,6 @@ require_once __DIR__ . '/../config.php';
 $userId = getAuthUserId();
 $db     = getDB();
 
-// 1. Activity Pulse (fire-and-forget — no result needed)
-$db->query("UPDATE users SET last_active = NOW() WHERE id = $userId");
-
 // 2. Clear Expired Boosts (cheap indexed update)
 $db->query("UPDATE users SET is_new_user_boost = 0 
             WHERE is_new_user_boost = 1 AND new_user_boost_expires < NOW()");

@@ -90,6 +90,9 @@ if (APP_ENV === 'local') {
 }
 
 function getDB(): mysqli {
+    static $conn = null;
+    if ($conn !== null) return $conn;
+
     try {
         mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
         $conn = mysqli_init();
@@ -104,7 +107,7 @@ function getDB(): mysqli {
 
         if (!$success) throw new Exception("Connection failed: " . mysqli_connect_error());
         $conn->set_charset('utf8mb4');
-        $conn->query("SET time_zone = '+05:30'");
+        @$conn->query("SET time_zone = '+05:30'"); // Silent fallback if host blocks this
         return $conn;
     } catch (Exception $e) {
         http_response_code(500);
@@ -176,31 +179,53 @@ function getAuthUserId(): int {
     }
 
     if ($userId) {
-        // FAST AS FUCK: Auto-sync location from headers (reduces API calls by 50%)
+        $db = getDB();
+        
+        // SPEED OPT: Throttled Location/Active sync (Skip if updated < 5 mins ago)
+        // This eliminates redundant DB writes on every single API request.
         if (isset($_SERVER['HTTP_X_LATITUDE']) && isset($_SERVER['HTTP_X_LONGITUDE'])) {
             $lat = (float)$_SERVER['HTTP_X_LATITUDE'];
             $lng = (float)$_SERVER['HTTP_X_LONGITUDE'];
             $city = $_SERVER['HTTP_X_CITY'] ?? null;
             if ($lat != 0 && $lng != 0) {
-                $db = getDB();
                 $citySql = $city ? ", city = '" . $db->real_escape_string($city) . "'" : "";
-                $db->query("UPDATE users SET latitude = $lat, longitude = $lng, last_active = NOW() $citySql WHERE id = $userId");
+                // Atomic conditional update to minimize write locking
+                $db->query("
+                    UPDATE users SET 
+                        latitude = $lat, 
+                        longitude = $lng, 
+                        last_active = NOW() 
+                        $citySql 
+                    WHERE id = $userId 
+                      AND (last_active IS NULL OR last_active < DATE_SUB(NOW(), INTERVAL 5 MINUTE))
+                ");
             }
+        } else {
+            // Even without location headers, throttle the "last_active" timestamp update
+            $db->query("
+                UPDATE users SET last_active = NOW() 
+                WHERE id = $userId 
+                  AND (last_active IS NULL OR last_active < DATE_SUB(NOW(), INTERVAL 5 MINUTE))
+            ");
         }
+
         // Auto-Refresh Credits if more than 24h passed
-        $db = getDB();
-        $stmt = $db->prepare("SELECT last_credit_refresh FROM users WHERE id = ?");
-        $stmt->bind_param('i', $userId);
-        $stmt->execute();
-        $last = $stmt->get_result()->fetch_assoc()['last_credit_refresh'] ?? null;
-        $stmt->close();
-        
-        if ($last) {
-            $lastTime = strtotime($last);
-            if (time() - $lastTime > 86400) { // 24 hours
-                // Reset free credits to 50
-                $db->query("UPDATE users SET credits = " . DAILY_FREE_CREDITS . ", last_credit_refresh = NOW() WHERE id = $userId");
-                $db->query("INSERT INTO credit_logs (user_id, amount, reason) VALUES ($userId, " . DAILY_FREE_CREDITS . ", 'Daily reset')");
+        // SPEED OPT: Prevent multiple redundancy checks in the same execution
+        static $creditRefreshed = false;
+        if (!$creditRefreshed) {
+            $creditRefreshed = true;
+            $stmt = $db->prepare("SELECT last_credit_refresh FROM users WHERE id = ?");
+            $stmt->bind_param('i', $userId);
+            $stmt->execute();
+            $last = $stmt->get_result()->fetch_assoc()['last_credit_refresh'] ?? null;
+            $stmt->close();
+            
+            if ($last) {
+                $lastTime = strtotime($last);
+                if (time() - $lastTime > 86400) { // 24 hours
+                    $db->query("UPDATE users SET credits = " . DAILY_FREE_CREDITS . ", last_credit_refresh = NOW() WHERE id = $userId");
+                    $db->query("INSERT INTO credit_logs (user_id, amount, reason) VALUES ($userId, " . DAILY_FREE_CREDITS . ", 'Daily reset')");
+                }
             }
         }
         return $userId;
