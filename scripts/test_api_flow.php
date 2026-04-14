@@ -94,6 +94,9 @@ $setA = callApi("profile/setup.php", [
     $viewB = callApi("profile/get_profile.php?target_id=$uidB", [], $tokenA);
     echo $viewB['code'] === 200 ? "SUCCESS" : "FAILED";
     echo " (" . $viewB['time'] . "s) [Proc: " . $viewB['proc'] . "]\n";
+    if ($viewB['code'] !== 200 || ($viewB['data']['status'] ?? '') === 'error') {
+        echo "   Error: " . ($viewB['data']['message'] ?? 'Unknown Error') . "\n";
+    }
 
     echo "User A swipes right on User B... ";
     $swipeA = callApi("profile/swipe.php", ['target_id' => $uidB, 'action' => 'like'], $tokenA);

@@ -54,8 +54,8 @@ if (!$row) {
 }
 
 // Parse JSON results
-$photos = json_decode($row['photos_json'] ?? '[]', true);
-$posts  = json_decode($row['posts_json']  ?? '[]', true);
+$photos = json_decode($row['photos_json'] ?? '[]', true) ?: [];
+$posts  = json_decode($row['posts_json']  ?? '[]', true) ?: [];
 
 // Deduplicate and Transform photos (Cloudinary)
 $finalPhotos = []; $seenUrls = [];
