@@ -33,6 +33,9 @@ function callApi($url, $payload = [], $token = null) {
     curl_close($ch);
     
     if ($err) echo " (CURL ERROR: $err) ";
+    if ($httpCode !== 200) {
+        echo " [HTTP $httpCode RAW: " . substr($response, 0, 500) . "] ";
+    }
     
     $jsonData = json_decode($response, true);
     $procTime = $jsonData['process_time'] ?? ($jsonData['data']['process_time'] ?? 'N/A');

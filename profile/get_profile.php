@@ -17,33 +17,17 @@ if (isset($_GET['target_id']) && (int)$_GET['target_id'] !== $userId) {
     $targetId = $userId;
 }
 
-// 🚀 ULTRA-SPEED: SINGLE TRIP QUERY
-// We fetch Profile + Photos + Posts + Match + Viewer Location in ONE single trip to the DB.
-// This is the fastest possible way to load a profile when your DB is far away.
-$sql = "
-    SELECT 
-        u.*, 
-        m.id AS match_id,
-        me.latitude AS my_lat, me.longitude AS my_lng,
-        (
-            SELECT JSON_ARRAYAGG(JSON_OBJECT('url', photo_url, 'is_dp', is_dp))
-            FROM user_photos 
-            WHERE user_id = u.id
-        ) AS photos_json,
-        (
-            SELECT JSON_ARRAYAGG(JSON_OBJECT('id', id, 'photo_url', photo_url, 'caption', caption, 'created_at', created_at))
-            FROM user_posts
-            WHERE user_id = u.id
-        ) AS posts_json
+// 🚀 SPEED OPT: Consolidated 3-Trip pattern (Safe & Reliable)
+// Trip 1: User data + Match + My Location
+$stmt = $db->prepare("
+    SELECT u.*, m.id AS match_id, me.latitude AS my_lat, me.longitude AS my_lng
     FROM users u
-    LEFT JOIN matches m ON (m.user1_id = $userId AND m.user2_id = u.id) 
-                        OR (m.user1_id = u.id AND m.user2_id = $userId)
-    LEFT JOIN users me ON me.id = $userId
+    LEFT JOIN matches m ON (m.user1_id = ? AND m.user2_id = u.id) 
+                        OR (m.user1_id = u.id AND m.user2_id = ?)
+    LEFT JOIN users me ON me.id = ?
     WHERE u.id = ?
-";
-
-$stmt = $db->prepare($sql);
-$stmt->bind_param('i', $targetId);
+");
+$stmt->bind_param('iiii', $userId, $userId, $userId, $targetId);
 $stmt->execute();
 $row = $stmt->get_result()->fetch_assoc();
 $stmt->close();
@@ -53,31 +37,38 @@ if (!$row) {
     exit();
 }
 
-// Parse JSON results
-$photos = json_decode($row['photos_json'] ?? '[]', true) ?: [];
-$posts  = json_decode($row['posts_json']  ?? '[]', true) ?: [];
-
-// Deduplicate and Transform photos (Cloudinary)
-$finalPhotos = []; $seenUrls = [];
-foreach ($photos as $p) {
-    $url = cloudinaryTransform($p['url'], 'q_auto,f_auto');
-    if (in_array($url, $seenUrls)) continue;
-    $finalPhotos[] = ['url' => $url, 'is_dp' => (bool)$p['is_dp']];
-    $seenUrls[] = $url;
+// Trip 2: Photos
+$photos = [];
+$resP = $db->query("SELECT photo_url, is_dp FROM user_photos WHERE user_id = $targetId ORDER BY is_dp DESC, created_at ASC");
+while ($p = $resP->fetch_assoc()) {
+    $photos[] = [
+        'url' => cloudinaryTransform($p['photo_url'], 'q_auto,f_auto'),
+        'is_dp' => (bool)$p['is_dp']
+    ];
 }
 
-// Distance calculation
+// Trip 3: Posts
+$posts = [];
+$resPost = $db->query("SELECT id, photo_url, caption, created_at FROM user_posts WHERE user_id = $targetId ORDER BY created_at DESC");
+while ($p = $resPost->fetch_assoc()) {
+    $posts[] = $p;
+}
+
+// Distance calc
 $distance = null;
 if ($userId !== $targetId && $row['my_lat'] && $row['latitude']) {
     $distance = haversineKm((float)$row['my_lat'], (float)$row['my_lng'], (float)$row['latitude'], (float)$row['longitude']);
 }
 
-// ─── RESPOND IMMEDIATELY ─────────────────────
-sendResponseAndContinue([
+// ─── RESPOND ─────────────────────
+// Note: Backgrounding (sendResponseAndContinue) might be unstable on Render, 
+// using standard echo for reliability in this debug pass.
+header('Content-Type: application/json');
+echo json_encode([
     'status' => 'success',
     'data' => [
         'profile'  => $row,
-        'photos'   => $finalPhotos,
+        'photos'   => $photos,
         'posts'    => $posts,
         'is_match' => !empty($row['match_id']),
         'match_id' => $row['match_id'] ? (int)$row['match_id'] : null,
@@ -85,9 +76,8 @@ sendResponseAndContinue([
     ]
 ]);
 
-// ─── BACKGROUND PROCESSING ─────────────────────
+// ─── BACKGROUND (Notifications) ───
 if ($targetId !== $userId) {
-    // Record View and Send Notification in background
     $db->query("INSERT INTO profile_views (viewer_id, viewed_id) VALUES ($userId, $targetId) ON DUPLICATE KEY UPDATE viewed_at = NOW()");
     require_once __DIR__ . '/../notifications/send_push.php';
     sendProfileViewNotification($db, $userId, $targetId);
