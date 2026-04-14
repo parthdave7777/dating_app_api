@@ -241,18 +241,20 @@ function getAuthUserId(): int {
  * for background tasks (Push, ELO, Stats).
  */
 function sendResponseAndContinue(array $response): void {
+    // Add processing time for debugging if not provided
+    if (!isset($response['process_time'])) {
+        $response['process_time'] = round(microtime(true) - ($_SERVER['REQUEST_TIME_FLOAT'] ?? time()), 4) . 's';
+    }
+
     header('Content-Type: application/json');
     echo json_encode($response);
     
     if (function_exists('fastcgi_finish_request')) {
         fastcgi_finish_request();
     } else {
-        // Fallback: Flush and close connection headers manually if possible
-        ignore_user_abort(true);
-        header('Connection: close');
-        header('Content-Length: ' . ob_get_length());
-        @ob_end_flush();
-        @flush();
+        // Fallback: Flush and close connection
+        if (ob_get_level()) ob_end_flush();
+        flush();
     }
 }
 
