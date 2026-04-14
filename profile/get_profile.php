@@ -88,15 +88,19 @@ $photos      = [];
 $photoUrls   = []; // flat list of URLs
 $dpUrl       = null;
 $firstUrl    = null;
+$seenIds     = [];
 $seenUrls    = [];
 
 while ($photo = $photoResult->fetch_assoc()) {
+    $photoId = (int)$photo['id'];
     $rawUrl = $photo['photo_url'];
     $optimizedUrl = cloudinaryTransform($rawUrl, 'q_auto,f_auto');
 
-    // Strict Uniqueness Check
-    if (in_array($optimizedUrl, $seenUrls)) continue;
-    $seenUrls[] = $optimizedUrl;
+    // Skip if we've already seen this DB row or this exact URL
+    if (in_array($photoId, $seenIds)) continue;
+    if (in_array($rawUrl, $seenUrls)) continue;
+    $seenIds[] = $photoId;
+    $seenUrls[] = $rawUrl;
 
     $isOurDP = (bool)$photo['is_dp'];
     
