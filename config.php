@@ -325,4 +325,4 @@ function cloudinaryTransform(string $url, string $transformation = 'q_auto,f_aut
 // ─── LEGACY UPLOAD CONSTANTS (no-ops for compatibility) ────────
 define('UPLOAD_DIR', sys_get_temp_dir() . '/');
 define('UPLOAD_URL', 'https://res.cloudinary.com/' . CLOUDINARY_CLOUD_NAME . '/image/upload/');
-?>
+?>  

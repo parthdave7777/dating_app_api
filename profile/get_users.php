@@ -120,11 +120,10 @@ $stmt->close();
 
 $candidates = [];
 while ($row = $candidateResult->fetch_assoc()) {
-    $dist = (float)($row['distance_km'] ?? 0);
-    $scoredItem = runScoring($row, $dist, $myAge, $myInterests, $isGlobal);
-    // Precision filter for local mode (Already mostly filtered by Bounding Box in SQL)
-    if (!$isGlobal && $hasCoords) {
-        if ($dist < $minDist || $dist > $maxDist) continue;
+    $scoredItem = runScoring($row, $myLat, $myLng, $myAge, $myInterests, $hasCoords, $isGlobal);
+    // Precision filter for local mode
+    if (!$isGlobal && $hasCoords && isset($row['distance_km'])) {
+        if ($row['distance_km'] < $minDist || $row['distance_km'] > $maxDist) continue;
     }
     $candidates[] = $scoredItem;
 }
@@ -136,11 +135,16 @@ usort($candidates, function($a, $b) {
 
 $scored = $candidates;
 
-function runScoring($row, $distanceKm, $myAge, $myInterests, $isGlobal): array {
+// 6. Scoring Function (The "Radial Expansion" Engine)
+function runScoring($row, $myLat, $myLng, $myAge, $myInterests, $hasCoords, $isGlobal): array {
     $totalScore = 10000000; // Base Score
+    $distanceKm = 0.0;
 
-    // --- PRIMARY FACTOR: Radial Distance (Fast! Use pre-computed) ---
-    if ($distanceKm > 0) {
+    // --- PRIMARY FACTOR: Radial Distance ---
+    if ($hasCoords && !empty($row['latitude']) && !empty($row['longitude'])) {
+        $distanceKm = haversineKm($myLat, $myLng, (float)$row['latitude'], (float)$row['longitude']);
+        
+        if ($isGlobal) {
             if ($distanceKm > 500) {
                 // GLOBAL BONUS: If they are far away (>500km), give them a massive lead
                 // Instead of subtracting, we add a huge bonus for the "Discovery" feel
