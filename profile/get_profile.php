@@ -84,32 +84,35 @@ $photoStmt->execute();
 $photoResult = $photoStmt->get_result();
 $photoStmt->close();
 
-$photos    = [];
-$photoUrls = []; // flat list of URLs
-$dpUrl     = null;
-$firstUrl  = null;
+$photos      = [];
+$photoUrls   = []; // flat list of URLs
+$dpUrl       = null;
+$firstUrl    = null;
+$seenUrls    = [];
+
 while ($photo = $photoResult->fetch_assoc()) {
-    $optimizedUrl = cloudinaryTransform($photo['photo_url'], 'q_auto,f_auto');
+    $rawUrl = $photo['photo_url'];
+    $optimizedUrl = cloudinaryTransform($rawUrl, 'q_auto,f_auto');
+
+    // Strict Uniqueness Check
+    if (in_array($optimizedUrl, $seenUrls)) continue;
+    $seenUrls[] = $optimizedUrl;
+
+    $isOurDP = (bool)$photo['is_dp'];
     
-    // Only add unique URLs to the photos array
-    $isDuplicate = false;
-    foreach ($photos as $existing) {
-        if ($existing['url'] === $optimizedUrl) {
-            // Keep the is_dp flag true if any duplicate is a DP
-            if ($photo['is_dp']) {
-                $existing['is_dp'] = true;
-            }
-            $isDuplicate = true;
-            break;
-        }
+    // Only allow ONE photo to be designated as the DP in the final array
+    if ($isOurDP && $dpUrl !== null) {
+        $isOurDP = false; // Downgrade extra DPs to normal photos
     }
 
-    if (!$isDuplicate) {
-        $photoUrls[] = $photo['photo_url'];
-        $photos[]    = ['url' => $optimizedUrl, 'is_dp' => (bool)$photo['is_dp']];
-        if ($firstUrl === null) $firstUrl = $optimizedUrl;
-        if ($photo['is_dp']) $dpUrl = $optimizedUrl;
-    }
+    $photos[] = [
+        'url'   => $optimizedUrl, 
+        'is_dp' => $isOurDP
+    ];
+    $photoUrls[] = $rawUrl;
+
+    if ($firstUrl === null) $firstUrl = $optimizedUrl;
+    if ($isOurDP) $dpUrl = $optimizedUrl;
 }
 // Fallback: if no photo is marked as DP, use the first one
 if ($dpUrl === null && $firstUrl !== null) $dpUrl = $firstUrl;
