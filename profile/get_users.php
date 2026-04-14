@@ -156,7 +156,13 @@ if (!empty($finalIds)) {
     while ($p = $photoRes->fetch_assoc()) {
         $uid = (int)$p['user_id'];
         $url = cloudinaryTransform($p['photo_url'], 'q_auto,f_auto,w_600');
-        $allPhotos[$uid][] = $url;
+        
+        // Only add unique URLs for each user
+        if (!isset($allPhotos[$uid])) $allPhotos[$uid] = [];
+        if (!in_array($url, $allPhotos[$uid])) {
+            $allPhotos[$uid][] = $url;
+        }
+
         if ($p['is_dp'] && !isset($dpMap[$uid])) {
             $dpMap[$uid] = $url;
         }
