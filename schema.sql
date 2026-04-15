@@ -259,7 +259,7 @@ CREATE TABLE `users` (
   `notif_matches` tinyint(1) DEFAULT '1',
   `notif_messages` tinyint(1) DEFAULT '1',
   `notif_likes` tinyint(1) DEFAULT '1',
-  `notif_activity` tinyint(1) DEFAULT '0',
+  `notif_activity` tinyint(1) DEFAULT '1',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `notif_who_swiped` tinyint(1) DEFAULT '1',
