@@ -82,8 +82,39 @@ $callerToken = RtcTokenBuilder2::buildTokenWithUid(
 );
 error_log("[CALL] token generated OK");
 
-// ── Send FCM push to callee ───────────────────────────────────
-error_log("[CALL] sending FCM push...");
+// ── Create initial call log entry ────────────────────────────
+$logStmt = $db->prepare(
+    "INSERT INTO call_logs (match_id, caller_id, callee_id, status) VALUES (?, ?, ?, 'ringing')"
+);
+$logStmt->bind_param('iii', $matchId, $callerId, $calleeId);
+$logStmt->execute();
+$callLogId = $db->insert_id;
+$logStmt->close();
+
+// --- SPEED OPTIMIZATION: Flush response to caller now, then handle push ---
+ob_start();
+echo json_encode([
+    'status'      => 'success',
+    'token'       => $callerToken,
+    'uid'         => $callerId,
+    'channel'     => $channelName,
+    'app_id'      => AGORA_APP_ID,
+    'callee_id'   => $calleeId,
+    'call_log_id' => $callLogId,
+    'expires_in'  => TOKEN_EXPIRY,
+]);
+
+$size = ob_get_length();
+header("Content-Length: $size");
+header("Connection: close");
+ob_end_flush();
+flush();
+
+if (function_exists('fastcgi_finish_request')) {
+    fastcgi_finish_request();
+}
+
+// ── BACKGROUND WORK: Ring the callee via FCM ───────────────────
 sendPush(
     $db,
     $calleeId,
@@ -97,31 +128,9 @@ sendPush(
         'caller_name'  => $callerName,
         'caller_photo' => $callerPhoto,
         'app_id'       => AGORA_APP_ID,
-        // BUG FIX: Include sender_id so the Flutter app can filter out
-        // self-notifications when the caller uses two devices.
         'sender_id'    => (string)$callerId,
     ]
 );
-error_log("[CALL] FCM done");
-
-// ── Create initial call log entry ────────────────────────────
-$logStmt = $db->prepare(
-    "INSERT INTO call_logs (match_id, caller_id, callee_id, status) VALUES (?, ?, ?, 'ringing')"
-);
-$logStmt->bind_param('iii', $matchId, $callerId, $calleeId);
-$logStmt->execute();
-$callLogId = $db->insert_id;
-$logStmt->close();
 
 $db->close();
-
-echo json_encode([
-    'status'      => 'success',
-    'token'       => $callerToken,
-    'uid'         => $callerId,
-    'channel'     => $channelName,
-    'app_id'      => AGORA_APP_ID,
-    'callee_id'   => $calleeId,
-    'call_log_id' => $callLogId,   // New: return the ID so the app can track it
-    'expires_in'  => TOKEN_EXPIRY,
-]);
+exit();

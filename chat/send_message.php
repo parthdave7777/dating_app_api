@@ -68,26 +68,8 @@ $msgStmt->execute();
 $msgRow = $msgStmt->get_result()->fetch_assoc();
 $msgStmt->close();
 
-// Push notification to the other user
-$recipientId = ((int)$matchRow['user1_id'] === $userId)
-    ? (int) $matchRow['user2_id']
-    : (int) $matchRow['user1_id'];
-
-require_once __DIR__ . '/../notifications/send_push.php';
-$senderName = $msgRow['sender_name'] ?? 'New message';
-$msgPreview = $type === 'image' ? '📷 Photo' : ($type === 'video' ? '🎥 Video' : $message);
-
-// BUG FIX: Include 'sender_id' in the push data payload so Flutter's
-// NotificationService can filter out self-notifications on the sender's
-// own device (when the user is logged in on multiple devices).
-sendPush($db, $recipientId, 'message', $senderName, $msgPreview, [
-    'match_id'  => (string)$matchId,
-    'title'     => $senderName,
-    'body'      => $msgPreview,
-    'sender_id' => (string)$userId,
-]);
-
-$db->close();
+// --- SPEED OPTIMIZATION: Send response to user immediately, then process push in background ---
+ob_start();
 
 echo json_encode([
     'status'     => 'success',
@@ -108,3 +90,38 @@ echo json_encode([
         'created_at'   =>        $msgRow['created_at'],
     ],
 ]);
+
+// Finalize the response and close the connection for the client
+$size = ob_get_length();
+header("Content-Length: $size");
+header("Connection: close");
+ob_end_flush();
+flush();
+
+// Only if running with PHP-FPM (Production servers)
+if (function_exists('fastcgi_finish_request')) {
+    fastcgi_finish_request();
+}
+
+// ─── BACKGROUND WORK STARTS HERE ───
+// The user has already received the "success" message on their phone.
+// Now we take our time to talk to Google/Firebase.
+
+// Push notification to the other user
+$recipientId = ((int)$matchRow['user1_id'] === $userId)
+    ? (int) $matchRow['user2_id']
+    : (int) $matchRow['user1_id'];
+
+require_once __DIR__ . '/../notifications/send_push.php';
+$senderName = $msgRow['sender_name'] ?? 'New message';
+$msgPreview = $type === 'image' ? '📷 Photo' : ($type === 'video' ? '🎥 Video' : $message);
+
+sendPush($db, $recipientId, 'message', $senderName, $msgPreview, [
+    'match_id'  => (string)$matchId,
+    'title'     => $senderName,
+    'body'      => $msgPreview,
+    'sender_id' => (string)$userId,
+]);
+
+$db->close();
+exit();
