@@ -3,6 +3,7 @@
         "php": ">=8.0",
         "vlucas/phpdotenv": "^5.5",
         "ext-mysqli": "*",
-        "ext-pdo_mysql": "*"
+        "ext-pdo_mysql": "*",
+        "pusher/pusher-php-server": "^7.2"
     }
 }

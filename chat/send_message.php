@@ -1,6 +1,7 @@
 <?php
 // chat/send_message.php
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../notifications/pusher_config.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed']);
@@ -68,23 +69,11 @@ $msgStmt->execute();
 $msgRow = $msgStmt->get_result()->fetch_assoc();
 $msgStmt->close();
 
-// ─── BACKGROUND PUSH TRIGGER ───
-// We trigger the async_push.php script via a local HTTP call with a 1-second timeout.
-// This ensures that send_message.php finishes INSTANTLY.
-
-$recipientId = ((int)$matchRow['user1_id'] === $userId)
-    ? (int) $matchRow['user2_id']
-    : (int) $matchRow['user1_id'];
-
-$senderName = $msgRow['sender_name'] ?? 'New message';
-$msgPreview = $type === 'image' ? '📷 Photo' : ($type === 'video' ? '🎥 Video' : $message);
-
-// Calculate our own base URL
-$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https://" : "http://";
-$host = $_SERVER['HTTP_HOST'];
-$asyncUrl = $protocol . $host . "/dating_api/notifications/async_push.php";
-
-$pushPayload = json_encode([
+// ─── BACKGROUND PUSH TRIGGER (The "Linux Stealth" Method) ───
+// We trigger the notification script as a separate process and move on immediately.
+$phpPath = "php"; // Common path on Railway
+$scriptPath = __DIR__ . "/../notifications/async_push_worker.php";
+$jsonPayload = escapeshellarg(json_encode([
     'recipient_id' => $recipientId,
     'type'         => 'message',
     'title'        => $senderName,
@@ -93,19 +82,16 @@ $pushPayload = json_encode([
         'match_id'  => (string)$matchId,
         'sender_id' => (string)$userId,
     ]
-]);
+]));
 
-$ch = curl_init($asyncUrl);
-curl_setopt_array($ch, [
-    CURLOPT_POST           => true,
-    CURLOPT_POSTFIELDS     => $pushPayload,
-    CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_TIMEOUT        => 1, // WE DON'T WAIT. 1 second is plenty to trigger it.
-    CURLOPT_SSL_VERIFYPEER => false,
+// This command says: "Start this PHP script, give it this data, and don't wait for it!"
+$cmd = "$phpPath $scriptPath $jsonPayload > /dev/null 2>&1 &";
+@shell_exec($cmd);
+
+// ─── BROADCAST VIA SOKETI (Instant!) ───
+broadcastToSoketi('match_' . $matchId, 'new_message', [
+    'message' => $msgRow
 ]);
-curl_exec($ch);
-curl_close($ch);
 
 $db->close();
 
