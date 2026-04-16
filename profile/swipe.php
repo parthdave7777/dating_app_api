@@ -150,12 +150,13 @@ if ($action === 'like' || $action === 'superlike') {
     }
 }
 
+$newBalance = getUserCredits($db, $userId);
 $db->close();
 
 echo json_encode([
     'status'   => 'success',
     'is_match' => $isMatch,
     'match_id' => $matchId,
-    'new_balance' => getUserCredits($db, $userId)
+    'new_balance' => $newBalance
 ]);
 ?>

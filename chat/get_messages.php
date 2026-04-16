@@ -110,20 +110,15 @@ $db->close();
 // ── Helpers ──────────────────────────────────────────────────
 
 function getReadHash(mysqli $db, int $matchId): string {
-    // BUG FIX: Use prepared statement to avoid SQL injection and cache misses
     $stmt = $db->prepare(
-        "SELECT CONCAT(id,':',is_read,':',is_received,':',is_opened,':',is_deleted,':',is_edited)
-         FROM messages WHERE match_id = ? ORDER BY id ASC"
+      "SELECT MAX(id), SUM(is_read), SUM(is_received), SUM(is_deleted), SUM(is_edited) 
+       FROM messages WHERE match_id = ?"
     );
     $stmt->bind_param('i', $matchId);
     $stmt->execute();
-    $result = $stmt->get_result();
-    $rows = [];
-    while ($row = $result->fetch_row()) {
-        $rows[] = $row[0];
-    }
+    $row  = $stmt->get_result()->fetch_row();
     $stmt->close();
-    return md5(implode('|', $rows));
+    return md5(implode('|', $row));
 }
 
 // ── Returns latest 25 messages (first load) ──────────────────

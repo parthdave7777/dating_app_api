@@ -161,53 +161,56 @@ define('CREDIT_COST_VIEW_SECRET', 50);
 define('CREDIT_COST_CALL_MIN',   50); 
 define('DAILY_FREE_CREDITS',     100);
 
+// Reads token from Authorization header OR from JSON body field 'token'
 function getAuthUserId(): int {
-    $authHeader = $_SERVER['HTTP_AUTHORIZATION']
-               ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION']
-               ?? '';
-    
-    $userId = 0;
+    // 1. Try Authorization: Bearer <token>
+    $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
     if (preg_match('/Bearer\s+(.+)/i', $authHeader, $m)) {
         $userId = verifyToken(trim($m[1]));
-    } elseif (!empty($body = json_decode(file_get_contents('php://input'), true)) && !empty($body['token'])) {
-        $userId = verifyToken($body['token']);
-    } elseif (!empty($_GET['token'])) {
-        $userId = verifyToken($_GET['token']);
+        if ($userId) return $userId;
     }
 
-    if ($userId) {
-        // FAST AS FUCK: Auto-sync location from headers (reduces API calls by 50%)
-        if (isset($_SERVER['HTTP_X_LATITUDE']) && isset($_SERVER['HTTP_X_LONGITUDE'])) {
-            $lat = (float)$_SERVER['HTTP_X_LATITUDE'];
-            $lng = (float)$_SERVER['HTTP_X_LONGITUDE'];
-            $city = $_SERVER['HTTP_X_CITY'] ?? null;
-            if ($lat != 0 && $lng != 0) {
-                $db = getDB();
-                $citySql = $city ? ", city = '" . $db->real_escape_string($city) . "'" : "";
-                $db->query("UPDATE users SET latitude = $lat, longitude = $lng, last_active = NOW() $citySql WHERE id = $userId");
-            }
-        }
-        // Auto-Refresh Credits if more than 24h passed
-        $db = getDB();
-        $stmt = $db->prepare("SELECT last_credit_refresh FROM users WHERE id = ?");
-        $stmt->bind_param('i', $userId);
-        $stmt->execute();
-        $last = $stmt->get_result()->fetch_assoc()['last_credit_refresh'] ?? null;
-        $stmt->close();
-        
-        if ($last) {
-            $lastTime = strtotime($last);
-            if (time() - $lastTime > 86400) { // 24 hours
-                // Reset free credits to 50
-                $db->query("UPDATE users SET credits = " . DAILY_FREE_CREDITS . ", last_credit_refresh = NOW() WHERE id = $userId");
-                $db->query("INSERT INTO credit_logs (user_id, amount, reason) VALUES ($userId, " . DAILY_FREE_CREDITS . ", 'Daily reset')");
-            }
-        }
-        return $userId;
+    // 2. Try body field 'token'
+    $body = json_decode(file_get_contents('php://input'), true) ?? [];
+    if (!empty($body['token'])) {
+        $userId = verifyToken($body['token']);
+        if ($userId) return $userId;
+    }
+
+    // 3. Try query param 'token'
+    if (!empty($_GET['token'])) {
+        $userId = verifyToken($_GET['token']);
+        if ($userId) return $userId;
     }
 
     http_response_code(401);
     die(json_encode(['status' => 'error', 'message' => 'Unauthorized']));
+}
+
+/**
+ * Lazy sync for location and credits. Call only from high-overhead endpoints.
+ * Moves these queries OUT of the auth hot-path.
+ */
+function autoSyncUserMeta(int $userId, mysqli $db): void {
+    // 1. Sync location from HTTP headers
+    $lat = $_SERVER['HTTP_X_LATITUDE'] ?? null;
+    $lng = $_SERVER['HTTP_X_LONGITUDE'] ?? null;
+    $city = $_SERVER['HTTP_X_CITY'] ?? null;
+    
+    if ($lat && $lng) {
+        $citySql = $city ? ", city = '" . $db->real_escape_string($city) . "'" : "";
+        $db->query("UPDATE users SET latitude = $lat, longitude = $lng, last_active = NOW() $citySql WHERE id = $userId");
+    }
+
+    // 2. Auto-refresh daily credits (e.g., reset to daily free amount every 24h)
+    $res = $db->query("SELECT last_credit_refresh FROM users WHERE id = $userId");
+    if ($res && $row = $res->fetch_assoc()) {
+        $last = $row['last_credit_refresh'];
+        if (!$last || (time() - strtotime($last) > 86400)) {
+            $db->query("UPDATE users SET credits = " . DAILY_FREE_CREDITS . ", last_credit_refresh = NOW() WHERE id = $userId");
+            $db->query("INSERT INTO credit_logs (user_id, amount, reason) VALUES ($userId, " . DAILY_FREE_CREDITS . ", 'Daily reset')");
+        }
+    }
 }
 
 function getUserCredits(mysqli $db, int $userId): int {

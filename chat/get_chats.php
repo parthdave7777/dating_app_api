@@ -5,29 +5,44 @@ require_once __DIR__ . '/../config.php';
 $userId = getAuthUserId();
 
 $db = getDB();
-$db->query("UPDATE users SET updated_at = NOW() WHERE id = $userId");
+autoSyncUserMeta($userId, $db);
 
-// Single optimised query — no per-row sub-queries
+// Single optimised query using JOINs instead of per-row sub-queries
 $stmt = $db->prepare("
-    SELECT * FROM (
-        SELECT
-            m.id AS match_id,
-            m.created_at AS match_created,
-            CASE WHEN m.user1_id = ? THEN m.user2_id ELSE m.user1_id END AS other_id,
-            (SELECT msg.message    FROM messages msg WHERE msg.match_id = m.id ORDER BY msg.id DESC LIMIT 1) AS last_message,
-            (SELECT msg.type       FROM messages msg WHERE msg.match_id = m.id ORDER BY msg.id DESC LIMIT 1) AS last_message_type,
-            (SELECT msg.sender_id  FROM messages msg WHERE msg.match_id = m.id ORDER BY msg.id DESC LIMIT 1) AS last_sender_id,
-            (SELECT msg.is_deleted FROM messages msg WHERE msg.match_id = m.id ORDER BY msg.id DESC LIMIT 1) AS last_is_deleted,
-            (SELECT msg.created_at FROM messages msg WHERE msg.match_id = m.id ORDER BY msg.id DESC LIMIT 1) AS last_message_time,
-            (SELECT cl.started_at  FROM call_logs cl WHERE cl.match_id = m.id ORDER BY cl.id DESC LIMIT 1) AS last_call_time,
-            (SELECT COUNT(*) FROM messages msg
-             WHERE msg.match_id = m.id AND msg.sender_id != ? AND msg.is_read = 0) AS unread_count
-        FROM matches m
-        WHERE m.user1_id = ? OR m.user2_id = ?
-    ) as chat_data
+    SELECT 
+        m.id AS match_id,
+        m.created_at AS match_created,
+        CASE WHEN m.user1_id = ? THEN m.user2_id ELSE m.user1_id END AS other_id,
+        lm.message AS last_message,
+        lm.type AS last_message_type,
+        lm.sender_id AS last_sender_id,
+        lm.is_deleted AS last_is_deleted,
+        lm.created_at AS last_message_time,
+        lc.started_at AS last_call_time,
+        uc.unread_count
+    FROM matches m
+    LEFT JOIN (
+        SELECT msg.match_id, msg.message, msg.type, msg.sender_id, msg.is_deleted, msg.created_at
+        FROM messages msg
+        INNER JOIN (
+            SELECT match_id, MAX(id) AS max_id FROM messages GROUP BY match_id
+        ) latest ON msg.id = latest.max_id
+    ) lm ON lm.match_id = m.id
+    LEFT JOIN (
+        SELECT match_id, MAX(started_at) AS started_at 
+        FROM call_logs 
+        GROUP BY match_id
+    ) lc ON lc.match_id = m.id
+    LEFT JOIN (
+        SELECT match_id, COUNT(*) AS unread_count 
+        FROM messages 
+        WHERE sender_id != ? AND is_read = 0
+        GROUP BY match_id
+    ) uc ON uc.match_id = m.id
+    WHERE m.user1_id = ? OR m.user2_id = ?
     ORDER BY GREATEST(
-        COALESCE(last_message_time, match_created),
-        COALESCE(last_call_time, match_created)
+        COALESCE(lm.created_at, m.created_at),
+        COALESCE(lc.started_at, m.created_at)
     ) DESC
 ");
 $stmt->bind_param('iiii', $userId, $userId, $userId, $userId);
