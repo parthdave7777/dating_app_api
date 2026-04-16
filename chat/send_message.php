@@ -68,9 +68,48 @@ $msgStmt->execute();
 $msgRow = $msgStmt->get_result()->fetch_assoc();
 $msgStmt->close();
 
-// --- SPEED OPTIMIZATION: Send response to user immediately, then process push in background ---
-ob_start();
+// ─── BACKGROUND PUSH TRIGGER ───
+// We trigger the async_push.php script via a local HTTP call with a 1-second timeout.
+// This ensures that send_message.php finishes INSTANTLY.
 
+$recipientId = ((int)$matchRow['user1_id'] === $userId)
+    ? (int) $matchRow['user2_id']
+    : (int) $matchRow['user1_id'];
+
+$senderName = $msgRow['sender_name'] ?? 'New message';
+$msgPreview = $type === 'image' ? '📷 Photo' : ($type === 'video' ? '🎥 Video' : $message);
+
+// Calculate our own base URL
+$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https://" : "http://";
+$host = $_SERVER['HTTP_HOST'];
+$asyncUrl = $protocol . $host . "/dating_api/notifications/async_push.php";
+
+$pushPayload = json_encode([
+    'recipient_id' => $recipientId,
+    'type'         => 'message',
+    'title'        => $senderName,
+    'body'         => $msgPreview,
+    'data'         => [
+        'match_id'  => (string)$matchId,
+        'sender_id' => (string)$userId,
+    ]
+]);
+
+$ch = curl_init($asyncUrl);
+curl_setopt_array($ch, [
+    CURLOPT_POST           => true,
+    CURLOPT_POSTFIELDS     => $pushPayload,
+    CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_TIMEOUT        => 1, // WE DON'T WAIT. 1 second is plenty to trigger it.
+    CURLOPT_SSL_VERIFYPEER => false,
+]);
+curl_exec($ch);
+curl_close($ch);
+
+$db->close();
+
+// --- SEND SUCCESS RESPONSE TO PHONE ---
 echo json_encode([
     'status'     => 'success',
     'message_id' => $msgId,
@@ -90,38 +129,4 @@ echo json_encode([
         'created_at'   =>        $msgRow['created_at'],
     ],
 ]);
-
-// Finalize the response and close the connection for the client
-$size = ob_get_length();
-header("Content-Length: $size");
-header("Connection: close");
-ob_end_flush();
-flush();
-
-// Only if running with PHP-FPM (Production servers)
-if (function_exists('fastcgi_finish_request')) {
-    fastcgi_finish_request();
-}
-
-// ─── BACKGROUND WORK STARTS HERE ───
-// The user has already received the "success" message on their phone.
-// Now we take our time to talk to Google/Firebase.
-
-// Push notification to the other user
-$recipientId = ((int)$matchRow['user1_id'] === $userId)
-    ? (int) $matchRow['user2_id']
-    : (int) $matchRow['user1_id'];
-
-require_once __DIR__ . '/../notifications/send_push.php';
-$senderName = $msgRow['sender_name'] ?? 'New message';
-$msgPreview = $type === 'image' ? '📷 Photo' : ($type === 'video' ? '🎥 Video' : $message);
-
-sendPush($db, $recipientId, 'message', $senderName, $msgPreview, [
-    'match_id'  => (string)$matchId,
-    'title'     => $senderName,
-    'body'      => $msgPreview,
-    'sender_id' => (string)$userId,
-]);
-
-$db->close();
 exit();

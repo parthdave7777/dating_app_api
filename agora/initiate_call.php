@@ -91,8 +91,50 @@ $logStmt->execute();
 $callLogId = $db->insert_id;
 $logStmt->close();
 
-// --- SPEED OPTIMIZATION: Flush response to caller now, then handle push ---
-ob_start();
+// ── Create initial call log entry ────────────────────────────
+$logStmt = $db->prepare(
+    "INSERT INTO call_logs (match_id, caller_id, callee_id, status) VALUES (?, ?, ?, 'ringing')"
+);
+$logStmt->bind_param('iii', $matchId, $callerId, $calleeId);
+$logStmt->execute();
+$callLogId = $db->insert_id;
+$logStmt->close();
+
+// ─── BACKGROUND PUSH TRIGGER (Non-blocking) ───
+$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https://" : "http://";
+$host = $_SERVER['HTTP_HOST'];
+$asyncUrl = $protocol . $host . "/dating_api/notifications/async_push.php";
+
+$pushPayload = json_encode([
+    'recipient_id' => $calleeId,
+    'type'         => 'incoming_call',
+    'title'        => '📹 Incoming Video Call',
+    'body'         => $callerName . ' is calling you…',
+    'data'         => [
+        'match_id'     => (string)$matchId,
+        'channel'      => $channelName,
+        'caller_id'    => (string)$callerId,
+        'caller_name'  => $callerName,
+        'caller_photo' => $callerPhoto,
+        'app_id'       => AGORA_APP_ID,
+        'sender_id'    => (string)$callerId,
+    ]
+]);
+
+$ch = curl_init($asyncUrl);
+curl_setopt_array($ch, [
+    CURLOPT_POST           => true,
+    CURLOPT_POSTFIELDS     => $pushPayload,
+    CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_TIMEOUT        => 1, // Trigger and move on
+    CURLOPT_SSL_VERIFYPEER => false,
+]);
+curl_exec($ch);
+curl_close($ch);
+
+$db->close();
+
 echo json_encode([
     'status'      => 'success',
     'token'       => $callerToken,
@@ -103,34 +145,4 @@ echo json_encode([
     'call_log_id' => $callLogId,
     'expires_in'  => TOKEN_EXPIRY,
 ]);
-
-$size = ob_get_length();
-header("Content-Length: $size");
-header("Connection: close");
-ob_end_flush();
-flush();
-
-if (function_exists('fastcgi_finish_request')) {
-    fastcgi_finish_request();
-}
-
-// ── BACKGROUND WORK: Ring the callee via FCM ───────────────────
-sendPush(
-    $db,
-    $calleeId,
-    'incoming_call',
-    '📹 Incoming Video Call',
-    $callerName . ' is calling you…',
-    [
-        'match_id'     => (string)$matchId,
-        'channel'      => $channelName,
-        'caller_id'    => (string)$callerId,
-        'caller_name'  => $callerName,
-        'caller_photo' => $callerPhoto,
-        'app_id'       => AGORA_APP_ID,
-        'sender_id'    => (string)$callerId,
-    ]
-);
-
-$db->close();
 exit();
