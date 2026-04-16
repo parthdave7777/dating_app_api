@@ -55,7 +55,11 @@ function getFcmAccessToken(): ?string {
     // SPEED OPT 4: File-based fallback cache if APCu is missing (Common on XAMPP)
     $cacheDir  = __DIR__ . '/../cache';
     $cacheFile = $cacheDir . '/fcm_token.json';
-    if (!is_dir($cacheDir)) @mkdir($cacheDir, 0777, true);
+    if (!is_dir($cacheDir)) {
+        if (!@mkdir($cacheDir, 0777, true)) {
+             error_log("[FCM] ERROR: Could not create cache directory: $cacheDir");
+        }
+    }
 
     if (file_exists($cacheFile)) {
         $fCache = json_decode(file_get_contents($cacheFile), true);
@@ -121,9 +125,11 @@ function getFcmAccessToken(): ?string {
         CURLOPT_TIMEOUT        => 10,
     ]);
 
+    $startExchange = microtime(true);
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
+    error_log("[FCM] Token exchange took " . round(microtime(true) - $startExchange, 3) . "s");
 
     if ($httpCode !== 200 || !$response) {
         error_log('[FCM] Token exchange failed: ' . $response);
@@ -316,9 +322,11 @@ function sendPush(
             CURLOPT_TIMEOUT        => 3,  // Reduced from 8s
         ]);
 
+        $startSend = microtime(true);
         $result   = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
+        error_log("[FCM] Actual API call to Google took " . round(microtime(true) - $startSend, 3) . "s");
 
         if ($httpCode === 404) {
             // Token is unregistered (app uninstalled/reinstalled) — clear it
