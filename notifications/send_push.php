@@ -239,9 +239,10 @@ function sendPush(
     }
 
     $stringData = array_map('strval', array_merge($data, [
-        'type'  => $type,
-        'title' => $title,
-        'body'  => $displayBody
+        'type'    => $type,
+        'title'   => $title,
+        'body'    => $displayBody,
+        'sent_at' => (string)microtime(true), // Diagnostic timestamp
     ]));
 
     // ── Build FCM HTTP v1 payload ─────────────────────────────
