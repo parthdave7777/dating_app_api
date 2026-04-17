@@ -192,6 +192,7 @@ function getCachedProfileData(mysqli $db, int $targetId): ?array {
     $stmt = $db->prepare("
         SELECT id, phone_number, full_name, age, gender, looking_for, bio,
                interests, height, education, job_title, company,
+               fcm_token,
                lifestyle_pets, lifestyle_drinking, lifestyle_smoking, lifestyle_workout, 
                lifestyle_diet, lifestyle_schedule, communication_style, relationship_goal,
                latitude, longitude, city, state, country, is_verified, profile_complete, setup_completed,
