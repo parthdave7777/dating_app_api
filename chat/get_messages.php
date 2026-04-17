@@ -236,7 +236,7 @@ function markRead(mysqli $db, int $matchId, int $userId): void {
         ];
         $jsonPayload = escapeshellarg(json_encode($workerPayload));
         $workerPath  = __DIR__ . "/../notifications/async_worker.php";
-        shell_exec("php $workerPath $jsonPayload > /dev/null 2>&1 &");
+        exec("nohup php $workerPath $jsonPayload > /dev/null 2>&1 < /dev/null &");
     }
 }
 

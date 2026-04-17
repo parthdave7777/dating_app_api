@@ -1,6 +1,7 @@
 <?php
 // chat/send_message.php
 require_once __DIR__ . '/../config.php';
+$startTime = microtime(true);
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed']);
@@ -90,15 +91,27 @@ $workerPayload = [
 $jsonPayload = escapeshellarg(json_encode($workerPayload));
 $workerPath = __DIR__ . "/../notifications/async_worker.php";
 
-// Run in background (Linux method for Railway)
-shell_exec("php $workerPath $jsonPayload > /dev/null 2>&1 &");
+// Run in background (Fully detached Linux method for Railway)
+exec("nohup php $workerPath $jsonPayload > /dev/null 2>&1 < /dev/null &");
 
 $db->close();
 
 // 5. Respond to mobile app INSTANTLY
-echo json_encode([
+$executionTime = round((microtime(true) - $startTime) * 1000, 2);
+
+$response = json_encode([
     'status'     => 'success',
     'message_id' => $msgId,
-    'message'    => $sharedMessage
+    'message'    => $sharedMessage,
+    'debug_ms'   => $executionTime 
 ]);
+
+// If running under FPM, flush response immediately
+if (function_exists('fastcgi_finish_request')) {
+    header('Content-Type: application/json');
+    echo $response;
+    fastcgi_finish_request();
+} else {
+    echo $response;
+}
 exit();
