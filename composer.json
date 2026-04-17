@@ -4,6 +4,7 @@
         "vlucas/phpdotenv": "^5.5",
         "ext-mysqli": "*",
         "ext-pdo_mysql": "*",
+        "ext-redis": "*",
         "pusher/pusher-php-server": "^7.2"
     }
 }
