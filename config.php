@@ -137,6 +137,52 @@ function generateToken(int $userId): string {
     return "$header.$payload.$signature";
 }
 
+// ─── REAL-TIME CHAT (SOKETI) ─────────────────────────────────
+define('SOKETI_HOST',   'soketi-production-3817.up.railway.app');
+define('SOKETI_APP_ID', 'legitdate-app');
+define('SOKETI_KEY',    'legit-key-123');
+define('SOKETI_SECRET', 'legit-secret-456');
+
+/**
+ * Broadcasts data to Soketi via HTTP API
+ */
+function broadcastToSoketi(string $channel, string $event, array $data): bool {
+    $path = "/apps/" . SOKETI_APP_ID . "/events";
+    $body = json_encode([
+        'name'     => $event,
+        'channels' => [$channel],
+        'data'     => json_encode($data)
+    ]);
+
+    $auth_timestamp = time();
+    $auth_version   = '1.0';
+    $method         = 'POST';
+    
+    $body_md5 = md5($body);
+    $auth_query = "auth_key=" . SOKETI_KEY 
+                . "&auth_timestamp=$auth_timestamp"
+                . "&auth_version=$auth_version"
+                . "&body_md5=$body_md5";
+
+    $string_to_sign = "$method\n$path\n$auth_query";
+    $auth_signature = hash_hmac('sha256', $string_to_sign, SOKETI_SECRET);
+    
+    $url = "https://" . SOKETI_HOST . "$path?$auth_query&auth_signature=$auth_signature";
+
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+    
+    $response = curl_exec($ch);
+    $info = curl_getinfo($ch);
+    curl_close($ch);
+
+    return ($info['http_code'] === 200);
+}
+
 function verifyToken(string $token): ?int {
     $parts = explode('.', $token);
     if (count($parts) !== 3) return null;
