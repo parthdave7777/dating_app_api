@@ -208,20 +208,7 @@ function markRead(mysqli $db, int $matchId, int $userId): void {
     );
     $readStmt->bind_param('ssii', $now, $now, $matchId, $userId);
     $readStmt->execute();
-    $affected = $readStmt->affected_rows;
     $readStmt->close();
-
-    // ─── BROADCAST READ STATUS (BACKGROUND) ───
-    if ($affected > 0) {
-        $workerPayload = [
-            'action_type'  => 'messages_read',
-            'match_id'     => $matchId,
-            'reader_id'    => $userId
-        ];
-        $jsonPayload = escapeshellarg(json_encode($workerPayload));
-        $workerPath  = __DIR__ . "/../notifications/async_worker.php";
-        exec("nohup php $workerPath $jsonPayload > /dev/null 2>&1 < /dev/null &");
-    }
 }
 
 function markReceived(mysqli $db, int $matchId, int $userId): void {
@@ -306,31 +293,29 @@ function buildMessageArray($result): array {
 }
 
 function getOtherUser(mysqli $db, int $otherId): array {
-    // NITRO CACHE: Fetch other user info from Redis
-    $profile = getCachedProfileData($db, $otherId);
-    if ($profile && !empty($profile['user'])) {
-        $u = $profile['user'];
-        $photo = !empty($u['dp_url']) ? $u['dp_url'] : '';
-        
-        // Calculate online status from cached updated_at
-        $isOnline = false;
-        if (!empty($u['updated_at'])) {
-            $lastSeen = strtotime($u['updated_at']);
-            if (time() - $lastSeen < 300) { // 5 minutes
-                $isOnline = true;
-            }
-        }
+    // SOLID & FAST: Single query with JOIN for photo
+    $stmt = $db->prepare("
+        SELECT u.id, u.full_name, up.photo_url,
+               (CASE WHEN u.updated_at >= DATE_SUB(NOW(), INTERVAL 5 MINUTE) THEN 1 ELSE 0 END) AS is_online
+        FROM users u 
+        LEFT JOIN user_photos up ON up.user_id = u.id AND up.is_dp = 1
+        WHERE u.id = ? 
+        LIMIT 1
+    ");
+    $stmt->bind_param('i', $otherId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
 
-        return [
-            'id'        => (int) $u['id'],
-            'full_name' =>       $u['full_name'] ?? 'User',
-            'photo_url' =>       $photo,
-            'photo'     =>       $photo,
-            'dp_url'    =>       $photo,
-            'is_online' =>       $isOnline,
-        ];
-    }
+    if (!$row) return ['id' => $otherId, 'full_name' => 'User', 'photo_url' => '', 'photo' => ''];
 
-    // Fallback if Redis fails
-    return ['id' => $otherId, 'full_name' => 'User', 'photo_url' => '', 'photo' => ''];
+    $photo = !empty($row['photo_url']) ? cloudinaryTransform($row['photo_url'], 'w_150,c_thumb,g_face,q_auto,f_auto') : '';
+    return [
+        'id'        => (int) $row['id'],
+        'full_name' =>       $row['full_name'] ?? 'User',
+        'photo_url' =>       $photo,
+        'photo'     =>       $photo,
+        'dp_url'    =>       $photo,
+        'is_online' => (bool) ($row['is_online'] ?? false),
+    ];
 }
