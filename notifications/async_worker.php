@@ -51,3 +51,13 @@ if ($type === 'new_message') {
     workerLog("FCM Push " . ($pushRes ? "SENT" : "FAILED") . " to user $recipientId");
     $db->close();
 }
+else if ($type === 'messages_read') {
+    $matchId  = $payload['match_id'];
+    $readerId = $payload['reader_id'];
+
+    $res = broadcastToSoketi("match_$matchId", "messages_read", [
+        'match_id'  => $matchId,
+        'reader_id' => $readerId
+    ]);
+    workerLog("Read Broadcast " . ($res ? "SUCCESS" : "FAILED") . " for match $matchId");
+}

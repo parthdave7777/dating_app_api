@@ -227,12 +227,16 @@ function markRead(mysqli $db, int $matchId, int $userId): void {
     $affected = $readStmt->affected_rows;
     $readStmt->close();
 
-    // ─── BROADCAST READ STATUS ───
+    // ─── BROADCAST READ STATUS (BACKGROUND) ───
     if ($affected > 0) {
-        broadcastToSoketi("match_$matchId", "messages_read", [
-            'match_id' => $matchId,
-            'reader_id' => $userId
-        ]);
+        $workerPayload = [
+            'action_type'  => 'messages_read',
+            'match_id'     => $matchId,
+            'reader_id'    => $userId
+        ];
+        $jsonPayload = escapeshellarg(json_encode($workerPayload));
+        $workerPath  = __DIR__ . "/../notifications/async_worker.php";
+        shell_exec("php $workerPath $jsonPayload > /dev/null 2>&1 &");
     }
 }
 
