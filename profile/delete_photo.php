@@ -53,6 +53,7 @@ if ($del->execute()) {
     if (strpos($photo['photo_url'], 'cloudinary.com') !== false) {
         cloudinaryDelete($photo['photo_url'], 'image');
     }
+    clearProfileCache($userId);
     echo json_encode(['status' => 'success', 'message' => 'Photo deleted']);
 } else {
     echo json_encode(['status' => 'error', 'message' => 'Failed to delete from database']);

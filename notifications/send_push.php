@@ -73,6 +73,13 @@ function getFcmAccessToken(): ?string {
         return $cachedToken;
     }
 
+    // NITRO OPTIMIZATION: Try Redis for shared token
+    $redis = getRedis();
+    if ($redis) {
+        $rToken = $redis->get('fcm_access_token');
+        if ($rToken) return $rToken;
+    }
+
     if (!$sa || empty($sa['private_key']) || empty($sa['client_email'])) {
         error_log('[FCM] Invalid service account JSON data');
         return null;
@@ -145,6 +152,11 @@ function getFcmAccessToken(): ?string {
     $cachedToken  = $tokenData['access_token'];
     $cachedExpiry = $now + (int)($tokenData['expires_in'] ?? 3600);
 
+    // NITRO OPTIMIZATION: Store in Redis (TTL ~55 mins)
+    if ($redis && !empty($tokenData['access_token'])) {
+        $redis->setex('fcm_access_token', 3300, $tokenData['access_token']);
+    }
+
     // SPEED OPT 3: Store in APCu
     if (function_exists('apcu_store') && !empty($tokenData['access_token'])) {
         apcu_store('fcm_access_token', $tokenData['access_token'], 3300);
@@ -184,17 +196,13 @@ function sendPush(
         $stmt->close();
     }
 
-    // ── Get recipient's FCM token AND check preferences ─────────────────────────────
-    $tokStmt = $db->prepare("SELECT fcm_token, notif_matches, notif_messages, notif_likes, notif_who_swiped, notif_activity FROM users WHERE id = ?");
-    $tokStmt->bind_param('i', $toUserId);
-    $tokStmt->execute();
-    $row = $tokStmt->get_result()->fetch_assoc();
-    $tokStmt->close();
-
-    if (!$row) {
-        error_log("[FCM] User $toUserId not found in database");
+    // ── Get recipient's FCM token AND check preferences (NITRO CACHED) ─────────────────────────────
+    $profile = getCachedProfileData($db, $toUserId);
+    if (!$profile || empty($profile['user'])) {
+        error_log("[FCM] User $toUserId not found in cache or database");
         return;
     }
+    $row = $profile['user'];
 
     // Filter by type - only block if specifically set to 0
     if ($type === 'message' && isset($row['notif_messages']) && (int)$row['notif_messages'] === 0) {

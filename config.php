@@ -140,6 +140,122 @@ function base64UrlDecode(string $data): string {
     return base64_decode(str_replace(['-', '_'], ['+', '/'], $data));
 }
 
+// ─── REDIS CONFIGURATION (FAST CACHE) ────────────────────────
+define('REDIS_HOST', getenv('REDISHOST') ?: '127.0.0.1');
+define('REDIS_PORT', getenv('REDISPORT') ?: '6379');
+define('REDIS_PASS', getenv('REDISPASSWORD') ?: '');
+
+/**
+ * Returns a connected Redis instance or null if connection fails.
+ * Fails gracefully to prevent app crashes if Redis is down.
+ */
+function getRedis(): ?Redis {
+    static $redis = null;
+    if ($redis !== null) return $redis;
+
+    if (!class_exists('Redis')) return null;
+
+    try {
+        $instance = new Redis();
+        // Use a short timeout so we don't hang if Redis is slow
+        $connected = @$instance->connect(REDIS_HOST, (int)REDIS_PORT, 1.5);
+        
+        if ($connected && !empty(REDIS_PASS)) {
+            $instance->auth(REDIS_PASS);
+        }
+
+        if ($connected) {
+            $redis = $instance;
+            return $redis;
+        }
+    } catch (Exception $e) {
+        error_log("[REDIS] Connection Error: " . $e->getMessage());
+    }
+    return null;
+}
+
+/**
+ * High-performance profile fetch with Redis caching.
+ * Caches the expensive User + Photos + Posts object.
+ */
+function getCachedProfileData(mysqli $db, int $targetId): ?array {
+    $redis = getRedis();
+    $cacheKey = "profile_data_$targetId";
+    
+    // 1. Try Cache
+    if ($redis) {
+        $cached = $redis->get($cacheKey);
+        if ($cached) return json_decode($cached, true);
+    }
+
+    // 2. Fetch from DB (Original logic from get_profile.php)
+    $stmt = $db->prepare("
+        SELECT id, phone_number, full_name, age, gender, looking_for, bio,
+               interests, height, education, job_title, company,
+               lifestyle_pets, lifestyle_drinking, lifestyle_smoking, lifestyle_workout, 
+               lifestyle_diet, lifestyle_schedule, communication_style, relationship_goal,
+               latitude, longitude, city, state, country, is_verified, profile_complete, setup_completed,
+               discovery_min_age, discovery_max_age, discovery_max_dist, discovery_min_dist, global_discovery,
+               notif_matches, notif_messages, notif_likes, notif_who_swiped, notif_activity,
+               credits, premium_credits
+        FROM users WHERE id = ?
+    ");
+    $stmt->bind_param('i', $targetId);
+    $stmt->execute();
+    $user = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if (!$user) return null;
+
+    // Photos
+    $photoStmt = $db->prepare("SELECT photo_url, is_dp FROM user_photos WHERE user_id = ? ORDER BY is_dp DESC, created_at ASC");
+    $photoStmt->bind_param('i', $targetId);
+    $photoStmt->execute();
+    $photoResult = $photoStmt->get_result();
+    $photoStmt->close();
+
+    $photos = []; $seenUrls = []; $dpUrl = null; $firstUrl = null;
+    while ($photo = $photoResult->fetch_assoc()) {
+        if (in_array($photo['photo_url'], $seenUrls)) continue;
+        $seenUrls[] = $photo['photo_url'];
+        $photos[] = ['url' => cloudinaryTransform($photo['photo_url']), 'is_dp' => (bool)$photo['is_dp']];
+        if ($firstUrl === null) $firstUrl = cloudinaryTransform($photo['photo_url']);
+        if ($photo['is_dp']) $dpUrl = cloudinaryTransform($photo['photo_url']);
+    }
+    if ($dpUrl === null && $firstUrl !== null) $dpUrl = $firstUrl;
+
+    // Posts
+    $postStmt = $db->prepare("SELECT id, photo_url, caption, created_at FROM user_posts WHERE user_id = ? ORDER BY created_at DESC");
+    $postStmt->bind_param('i', $targetId);
+    $postStmt->execute();
+    $posts = $postStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $postStmt->close();
+
+    $profileData = [
+        'user'   => $user,
+        'photos' => $photos,
+        'dp_url' => $dpUrl,
+        'posts'  => $posts
+    ];
+
+    // 3. Save to Cache (1 Hour TTL)
+    if ($redis) {
+        $redis->setex($cacheKey, 3600, json_encode($profileData));
+    }
+
+    return $profileData;
+}
+
+/**
+ * Clears the profile cache. Call this after any profile update.
+ */
+function clearProfileCache(int $userId): void {
+    $redis = getRedis();
+    if ($redis) {
+        $redis->del("profile_data_$userId");
+    }
+}
+
 function generateToken(int $userId): string {
     $header    = base64UrlEncode(json_encode(['alg' => 'HS256', 'typ' => 'JWT']));
     $payload   = base64UrlEncode(json_encode([

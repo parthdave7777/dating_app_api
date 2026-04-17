@@ -91,6 +91,7 @@ $stmt->bind_param('sisssssssssssssssssii',
 );
 
 if ($stmt->execute()) {
+    clearProfileCache($userId);
     echo json_encode(['status' => 'success', 'message' => 'Profile updated']);
 } else {
     echo json_encode(['status' => 'error', 'message' => 'Update failed: ' . $stmt->error]);

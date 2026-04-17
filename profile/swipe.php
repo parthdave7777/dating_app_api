@@ -151,6 +151,11 @@ if ($action === 'like' || $action === 'superlike') {
 }
 
 $newBalance = getUserCredits($db, $userId);
+
+// NITRO CACHE CLEANUP
+clearProfileCache($userId);
+clearProfileCache($swipedUserId);
+
 $db->close();
 
 echo json_encode([

@@ -3,17 +3,12 @@
 require_once __DIR__ . '/../config.php';
 
 $userId = getAuthUserId();
-if (!$userId) {
-    header('Content-Type: application/json');
-    echo json_encode(['status' => 'error', 'message' => 'Unauthorized']);
-    exit();
-}
 $db     = getDB();
 
 if (isset($_GET['target_id']) && (int)$_GET['target_id'] !== $userId) {
     $targetId = (int) $_GET['target_id'];
     
-    // 1. Check if we should send a notification (only if last view was > 6 hours ago)
+    // 1. Notification Logic (Keep this in DB, very fast indexed read)
     $viewCheck = $db->prepare("SELECT viewed_at FROM profile_views WHERE viewer_id = ? AND viewed_id = ?");
     $viewCheck->bind_param('ii', $userId, $targetId);
     $viewCheck->execute();
@@ -21,19 +16,12 @@ if (isset($_GET['target_id']) && (int)$_GET['target_id'] !== $userId) {
     $viewCheck->close();
 
     $shouldNotify = true;
-    if ($viewRes) {
-        $lastView = strtotime($viewRes['viewed_at']);
-        if (time() - $lastView < (6 * 3600)) { // 6 hours
-            $shouldNotify = false;
-        }
+    if ($viewRes && (time() - strtotime($viewRes['viewed_at']) < (6 * 3600))) {
+        $shouldNotify = false;
     }
 
-    // 2. Record/Update the view
-    $db->query("INSERT INTO profile_views (viewer_id, viewed_id)
-                VALUES ($userId, $targetId)
-                ON DUPLICATE KEY UPDATE viewed_at = NOW()");
+    $db->query("INSERT INTO profile_views (viewer_id, viewed_id) VALUES ($userId, $targetId) ON DUPLICATE KEY UPDATE viewed_at = NOW()");
 
-    // 3. Send Notification if appropriate
     if ($shouldNotify) {
         require_once __DIR__ . '/../notifications/send_push.php';
         sendProfileViewNotification($db, $userId, $targetId);
@@ -42,112 +30,38 @@ if (isset($_GET['target_id']) && (int)$_GET['target_id'] !== $userId) {
     $targetId = $userId;
 }
 
-$stmt = $db->prepare("
-    SELECT id, phone_number, full_name, age, gender, looking_for, bio,
-           interests, height, education, job_title, company,
-           lifestyle_pets, lifestyle_drinking, lifestyle_smoking, lifestyle_workout, 
-           lifestyle_diet, lifestyle_schedule, communication_style, relationship_goal,
-           latitude, longitude, city, state, country, is_verified, profile_complete, setup_completed,
-           discovery_min_age, discovery_max_age, discovery_max_dist, discovery_min_dist, global_discovery,
-           notif_matches, notif_messages, notif_likes, notif_who_swiped, notif_activity,
-           credits, premium_credits
-    FROM users WHERE id = ?
-");
-
-if (!$stmt) {
-    echo json_encode(['status' => 'error', 'message' => 'Query preparation failed: ' . $db->error]);
-    exit();
-}
-
-$stmt->bind_param('i', $targetId);
-if (!$stmt->execute()) {
-    echo json_encode(['status' => 'error', 'message' => 'Query execution failed: ' . $stmt->error]);
-    exit();
-}
-
-$result = $stmt->get_result();
-$stmt->close();
-
-if ($result->num_rows === 0) {
+// 2. Fetch Profile from NITRO (Redis) Cache
+$profileData = getCachedProfileData($db, $targetId);
+if (!$profileData) {
     echo json_encode(['status' => 'error', 'message' => 'User not found']);
     exit();
 }
 
-$user = $result->fetch_assoc();
+$user   = $profileData['user'];
+$photos = $profileData['photos'];
+$dpUrl  = $profileData['dp_url'];
+$posts  = $profileData['posts'];
 
-// Fetch photos — deduplicate by URL to handle previous setup bug
-$photoStmt = $db->prepare(
-    "SELECT id, photo_url, is_dp FROM user_photos WHERE user_id = ? ORDER BY is_dp DESC, created_at ASC"
-);
-$photoStmt->bind_param('i', $targetId);
-$photoStmt->execute();
-$photoResult = $photoStmt->get_result();
-$photoStmt->close();
-
-$photos      = [];
-$photoUrls   = []; 
-$dpUrl       = null;
-$firstUrl    = null;
-$seenUrls    = [];
-
-while ($photo = $photoResult->fetch_assoc()) {
-    $rawUrl = $photo['photo_url'];
-    $optimizedUrl = cloudinaryTransform($rawUrl, 'q_auto,f_auto');
-
-    // ONLY skip if we've seen this EXACT URL before
-    if (in_array($rawUrl, $seenUrls)) continue;
-    $seenUrls[] = $rawUrl;
-
-    $isOurDP = (bool)$photo['is_dp'];
-    
-    if ($isOurDP && $dpUrl !== null) $isOurDP = false; 
-
-    $photos[] = [
-        'url'   => $optimizedUrl, 
-        'is_dp' => $isOurDP
-    ];
-    $photoUrls[] = $rawUrl;
-
-    if ($firstUrl === null) $firstUrl = $optimizedUrl;
-    if ($isOurDP) $dpUrl = $optimizedUrl;
-}
-// Fallback: if no photo is marked as DP, use the first one
-if ($dpUrl === null && $firstUrl !== null) $dpUrl = $firstUrl;
-
-// Fetch posts
-$postStmt = $db->prepare(
-    "SELECT id, photo_url, caption, created_at FROM user_posts WHERE user_id = ? ORDER BY created_at DESC"
-);
-$postStmt->bind_param('i', $targetId);
-$postStmt->execute();
-$postResult = $postStmt->get_result();
-$postStmt->close();
-
-$posts = [];
-while ($post = $postResult->fetch_assoc()) {
-    $posts[] = $post;
-}
-
-// Match Status
+// 3. Dynamic Viewer-Specific Logic (Match Status)
 $isMatch = false;
 $matchId = null;
 if ($userId !== $targetId) {
     $mStmt = $db->prepare("SELECT id FROM matches WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)");
-    $u1 = min($userId, $targetId);
-    $u2 = max($userId, $targetId);
+    $u1 = min($userId, $targetId); $u2 = max($userId, $targetId);
     $mStmt->bind_param('iiii', $u1, $u2, $u1, $u2);
     $mStmt->execute();
     $mRes = $mStmt->get_result();
-    if ($mRes->num_rows > 0) {
+    if ($mRow = $mRes->fetch_assoc()) {
         $isMatch = true;
-        $matchId = (int) $mRes->fetch_assoc()['id'];
+        $matchId = (int) $mRow['id'];
     }
     $mStmt->close();
 }
 
-// Distance
+// 4. Distance Calculation
 $distance = null;
 if ($userId !== $targetId) {
+    // Current user location
     $locStmt = $db->prepare("SELECT latitude, longitude FROM users WHERE id = ?");
     $locStmt->bind_param('i', $userId);
     $locStmt->execute();
@@ -155,15 +69,13 @@ if ($userId !== $targetId) {
     $locStmt->close();
 
     if ($locRow && $locRow['latitude'] && $user['latitude']) {
-        $distance = haversineKm(
-            (float) $locRow['latitude'],  (float) $locRow['longitude'],
-            (float) $user['latitude'],    (float) $user['longitude']
-        );
+        $distance = haversineKm((float)$locRow['latitude'], (float)$locRow['longitude'], (float)$user['latitude'], (float)$user['longitude']);
     }
 }
 
 $db->close();
 
+header('Content-Type: application/json');
 echo json_encode([
     'status'  => 'success',
     'profile' => [
@@ -195,8 +107,7 @@ echo json_encode([
         'is_verified'       => (bool) $user['is_verified'],
         'profile_complete'  => (bool) $user['profile_complete'],
         'setup_completed'   => (bool) $user['setup_completed'],
-        'photos'            =>        $photos,      // array of {url, is_dp}
-        'photo_urls'        =>        $photoUrls,   // flat string array (legacy)
+        'photos'            =>        $photos,
         'dp_url'            =>        $dpUrl,
         'posts'             =>        $posts,
         'distance_km'       =>        $distance,

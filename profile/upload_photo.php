@@ -70,6 +70,7 @@ if ($stmt->execute()) {
     if ($isSelfie) {
         $db->query("UPDATE users SET verification_status = 1 WHERE id = $userId");
     }
+    clearProfileCache($userId);
     echo json_encode(['status' => 'success', 'photo_id' => $photoId, 'photo_url' => $photoUrl]);
 } else {
     echo json_encode(['status' => 'error', 'message' => 'Execute Error: ' . $stmt->error]);
