@@ -22,8 +22,7 @@ if ($messageId <= 0 || $newText === '') {
 $db = getDB();
 
 // ── 1. Fetch current message state ───────────────────────────
-// We select only columns we are sure exist or handle their absence.
-$stmt = $db->prepare("SELECT id, sender_id, type FROM messages WHERE id = ?");
+$stmt = $db->prepare("SELECT id, match_id, sender_id, type FROM messages WHERE id = ?");
 $stmt->bind_param('i', $messageId);
 $stmt->execute();
 $msgRow = $stmt->get_result()->fetch_assoc();
@@ -34,6 +33,8 @@ if (!$msgRow) {
     $db->close();
     exit();
 }
+
+$matchId = (int)$msgRow['match_id'];
 
 if ((int)$msgRow['sender_id'] !== $userId) {
     echo json_encode(['status' => 'error', 'message' => 'Unauthorized: You did not send this message']);
@@ -49,28 +50,21 @@ if ($msgRow['type'] !== 'text') {
 }
 
 // ── 2. Update the message ─────────────────────────────────────
-// We try to update is_edited if the column exists.
-$query = "UPDATE messages SET message = ?, is_edited = 1 WHERE id = ? AND sender_id = ?";
-try {
-    $upd = $db->prepare($query);
-    $upd->bind_param('sii', $newText, $messageId, $userId);
-    $upd->execute();
-    
-    if ($upd->affected_rows === 0) {
-       // Maybe is_edited column is missing? Try fallback without it.
-       $upd->close();
-       $db->prepare("UPDATE messages SET message = ? WHERE id = ? AND sender_id = ?")
-          ->execute([$newText, $messageId, $userId]);
-    } else {
-       $upd->close();
-    }
-} catch (Exception $e) {
-    // Column likely missing, run the simple update
-    $upd = $db->prepare("UPDATE messages SET message = ? WHERE id = ? AND sender_id = ?");
-    $upd->bind_param('sii', $newText, $messageId, $userId);
-    $upd->execute();
-    $upd->close();
-}
+$upd = $db->prepare("UPDATE messages SET message = ?, is_edited = 1 WHERE id = ? AND sender_id = ?");
+$upd->bind_param('sii', $newText, $messageId, $userId);
+$upd->execute();
+$upd->close();
+
+// ── 3. ASYNC BROADCAST (NITRO) ───────────────────────────────
+$workerPayload = [
+    'action_type' => 'message_edited',
+    'match_id'    => $matchId,
+    'message_id'  => $messageId,
+    'new_text'    => $newText
+];
+$jsonPayload = escapeshellarg(json_encode($workerPayload));
+$workerPath  = __DIR__ . "/../notifications/async_worker.php";
+exec("nohup php $workerPath $jsonPayload > /dev/null 2>&1 < /dev/null &");
 
 $db->close();
 
