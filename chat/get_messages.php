@@ -306,26 +306,31 @@ function buildMessageArray($result): array {
 }
 
 function getOtherUser(mysqli $db, int $otherId): array {
-    $stmt = $db->prepare("
-        SELECT id, full_name,
-               (SELECT photo_url FROM user_photos WHERE user_id = u.id AND is_dp = 1 LIMIT 1) as photo,
-               (CASE WHEN u.updated_at >= DATE_SUB(NOW(), INTERVAL 5 MINUTE) THEN 1 ELSE 0 END) AS is_online
-        FROM users u WHERE id = ?
-    ");
-    $stmt->bind_param('i', $otherId);
-    $stmt->execute();
-    $row = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
+    // NITRO CACHE: Fetch other user info from Redis
+    $profile = getCachedProfileData($db, $otherId);
+    if ($profile && !empty($profile['user'])) {
+        $u = $profile['user'];
+        $photo = !empty($u['dp_url']) ? $u['dp_url'] : '';
+        
+        // Calculate online status from cached updated_at
+        $isOnline = false;
+        if (!empty($u['updated_at'])) {
+            $lastSeen = strtotime($u['updated_at']);
+            if (time() - $lastSeen < 300) { // 5 minutes
+                $isOnline = true;
+            }
+        }
 
-    if (!$row) return ['id' => $otherId, 'full_name' => 'User', 'photo_url' => '', 'photo' => ''];
+        return [
+            'id'        => (int) $u['id'],
+            'full_name' =>       $u['full_name'] ?? 'User',
+            'photo_url' =>       $photo,
+            'photo'     =>       $photo,
+            'dp_url'    =>       $photo,
+            'is_online' =>       $isOnline,
+        ];
+    }
 
-    $photo = !empty($row['photo']) ? cloudinaryTransform($row['photo'], 'w_150,c_thumb,g_face,q_auto,f_auto') : '';
-    return [
-        'id'        => (int) $row['id'],
-        'full_name' =>       $row['full_name'] ?? 'User',
-        'photo_url'  =>       $photo,
-        'photo'     =>       $photo,
-        'dp_url'    =>       $photo,
-        'is_online' => (bool) ($row['is_online'] ?? false),
-    ];
+    // Fallback if Redis fails
+    return ['id' => $otherId, 'full_name' => 'User', 'photo_url' => '', 'photo' => ''];
 }
