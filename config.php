@@ -97,7 +97,21 @@ function getDB(): mysqli {
 
         if (USE_SSL) {
             mysqli_options($conn, MYSQLI_OPT_SSL_VERIFY_SERVER_CERT, false);
-            $success = mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT, NULL, MYSQLI_CLIENT_SSL);
+        // OPTIMIZATION: Only use SSL for public/external database connections.
+        // Internal railway connections (.internal or localhost) are safe and much faster without SSL.
+        $isInternal = (strpos(DB_HOST, '.internal') !== false || DB_HOST === 'localhost' || DB_HOST === '127.0.0.1');
+        $flags = $isInternal ? 0 : MYSQLI_CLIENT_SSL;
+        
+        try {
+            $success = mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT, NULL, $flags);
+            if (!$success) {
+                // Fallback attempt without SSL if SSL failed
+                $success = mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT, NULL, 0);
+            }
+        } catch (Exception $e) {
+            // Final fallback
+            @mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT, NULL, 0);
+        }
         } else {
             $success = mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT);
         }
