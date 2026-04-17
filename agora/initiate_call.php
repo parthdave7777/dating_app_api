@@ -100,14 +100,10 @@ $logStmt->execute();
 $callLogId = $db->insert_id;
 $logStmt->close();
 
-// ─── BACKGROUND PUSH TRIGGER (Non-blocking) ───
-$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https://" : "http://";
-$host = $_SERVER['HTTP_HOST'];
-$asyncUrl = $protocol . $host . "/dating_api/notifications/async_push.php";
-
-$pushPayload = json_encode([
+// ─── BACKGROUND PUSH TRIGGER (NITRO VERSION) ───
+$workerPayload = [
+    'action_type'  => 'incoming_call', // Use unique action type for worker
     'recipient_id' => $calleeId,
-    'type'         => 'incoming_call',
     'title'        => '📹 Incoming Video Call',
     'body'         => $callerName . ' is calling you…',
     'data'         => [
@@ -119,19 +115,11 @@ $pushPayload = json_encode([
         'app_id'       => AGORA_APP_ID,
         'sender_id'    => (string)$callerId,
     ]
-]);
+];
 
-$ch = curl_init($asyncUrl);
-curl_setopt_array($ch, [
-    CURLOPT_POST           => true,
-    CURLOPT_POSTFIELDS     => $pushPayload,
-    CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_TIMEOUT        => 1, // Trigger and move on
-    CURLOPT_SSL_VERIFYPEER => false,
-]);
-curl_exec($ch);
-curl_close($ch);
+$jsonPayload = escapeshellarg(json_encode($workerPayload));
+$workerPath  = __DIR__ . "/../notifications/async_worker.php";
+exec("nohup php $workerPath $jsonPayload > /dev/null 2>&1 < /dev/null &");
 
 $db->close();
 

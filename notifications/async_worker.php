@@ -61,3 +61,14 @@ else if ($type === 'messages_read') {
     ]);
     workerLog("Read Broadcast " . ($res ? "SUCCESS" : "FAILED") . " for match $matchId");
 }
+else if ($type === 'incoming_call') {
+    $recipientId = $payload['recipient_id'];
+    $title       = $payload['title'];
+    $body        = $payload['body'];
+    $data        = $payload['data'];
+
+    $db = getDB();
+    $pushRes = sendPush($db, $recipientId, 'incoming_call', $title, $body, $data);
+    workerLog("FCM Call Push " . ($pushRes ? "SENT" : "FAILED") . " to user $recipientId");
+    $db->close();
+}
