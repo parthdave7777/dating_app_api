@@ -201,35 +201,35 @@ function sendPush(
     $profile = getCachedProfileData($db, $toUserId);
     if (!$profile || empty($profile['user'])) {
         error_log("[FCM] User $toUserId not found in cache or database");
-        return;
+        return false;
     }
     $row = $profile['user'];
 
     // Filter by type - only block if specifically set to 0
     if ($type === 'message' && isset($row['notif_messages']) && (int)$row['notif_messages'] === 0) {
         error_log("[FCM] Suppression: User $toUserId has disabled message notifications");
-        return;
+        return false;
     }
     if ($type === 'match' && isset($row['notif_matches']) && (int)$row['notif_matches'] === 0) {
         error_log("[FCM] Suppression: User $toUserId has disabled match notifications");
-        return;
+        return false;
     }
     if (in_array($type, ['like', 'superlike']) && isset($row['notif_likes']) && (int)$row['notif_likes'] === 0) {
         error_log("[FCM] Suppression: User $toUserId has disabled like/superlike notifications");
-        return;
+        return false;
     }
     if ($type === 'profile_view' && isset($row['notif_who_swiped']) && (int)$row['notif_who_swiped'] === 0) {
         error_log("[FCM] Suppression: User $toUserId has disabled profile view notifications");
-        return;
+        return false;
     }
     if ($type === 'compliment' && isset($row['notif_activity']) && (int)$row['notif_activity'] === 0) {
         error_log("[FCM] Suppression: User $toUserId has disabled compliment/activity notifications");
-        return;
+        return false;
     }
 
     if (empty($row['fcm_token'])) {
         error_log("[FCM] No FCM token for user $toUserId. They might be logged out or haven't granted permission.");
-        return;
+        return false;
     }
 
     $fcmToken = $row['fcm_token'];
@@ -238,7 +238,7 @@ function sendPush(
     $accessToken = getFcmAccessToken();
     if (!$accessToken) {
         error_log('[FCM] Could not get access token — push skipped');
-        return;
+        return false;
     }
 
     // ── All data values must be strings for FCM data messages ─
@@ -264,7 +264,7 @@ function sendPush(
     $projectId = $sa['project_id'] ?? '';
     if (!$projectId) {
         error_log('[FCM] No project_id found in JSON or EnvVar — push skipped');
-        return;
+        return false;
     }
 
     // BUG FIX: Use data-only messages (no 'notification' block) for ALL types
