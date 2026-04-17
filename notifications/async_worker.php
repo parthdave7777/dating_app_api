@@ -72,3 +72,15 @@ else if ($type === 'incoming_call') {
     workerLog("FCM Call Push " . ($pushRes ? "SENT" : "FAILED") . " to user $recipientId");
     $db->close();
 }
+else if ($type === 'message_edited') {
+    $matchId   = $payload['match_id'];
+    $messageId = $payload['message_id'];
+    $newText   = $payload['new_text'];
+
+    $res = broadcastToSoketi("match_$matchId", "message_edited", [
+        'message_id' => $messageId,
+        'new_text'   => $newText,
+        'match_id'   => $matchId
+    ]);
+    workerLog("Edit Broadcast " . ($res ? "SUCCESS" : "FAILED") . " for match $matchId");
+}
