@@ -36,7 +36,7 @@ if (!$matchRow) {
     exit();
 }
 
-// 2. Insert message
+// 2. Insert message (This is what actually matters for the DB)
 $stmt = $db->prepare(
     "INSERT INTO messages (match_id, sender_id, message, type) VALUES (?, ?, ?, ?)"
 );
@@ -59,40 +59,46 @@ $msgStmt->execute();
 $msgRow = $msgStmt->get_result()->fetch_assoc();
 $msgStmt->close();
 
-$recipientId = ((int)$matchRow['user1_id'] === $userId) ? (int)$matchRow['user2_id'] : (int)$matchRow['user1_id'];
-$senderName = $msgRow['sender_name'] ?? 'New message';
-$msgPreview = $type === 'image' ? '📷 Photo' : $message;
-
-// 4. TRIGGER REAL-TIME BROADCAST (SOKETI)
-$socketData = [
-    'message' => [
-        'id'          => (int)  $msgRow['id'],
-        'sender_id'   => (int)  $msgRow['sender_id'],
-        'sender_name' =>        $msgRow['sender_name'],
-        'message'     =>        $msgRow['message'],
-        'type'        =>        $msgRow['type'],
-        'is_read'     => false,
-        'is_saved'    => 0,
-        'is_deleted'  => false,
-        'is_edited'   => false,
-        'created_at'  =>        $msgRow['created_at'],
-    ]
+$sharedMessage = [
+    'id'          => (int)  $msgRow['id'],
+    'sender_id'   => (int)  $msgRow['sender_id'],
+    'sender_name' =>        $msgRow['sender_name'],
+    'message'     =>        $msgRow['message'],
+    'type'        =>        $msgRow['type'],
+    'is_read'     => false,
+    'is_saved'    => 0,
+    'is_deleted'  => false,
+    'is_edited'   => false,
+    'created_at'  =>        $msgRow['created_at'],
 ];
-broadcastToSoketi("match_$matchId", "new_message", $socketData);
 
-// 5. TRIGGER BACKGROUND NOTIFICATION (FCM)
-require_once __DIR__ . '/../notifications/send_push.php';
-sendPush($db, $recipientId, 'message', $senderName, $msgPreview, [
-    'match_id'  => (string)$matchId,
-    'sender_id' => (string)$userId,
-]);
+// 4. TRIGGER BACKGROUND PROCESS (FCM + SOKETI)
+// This is the "Stealth" part. We trigger the background worker and RETURN IMMEDIATELY.
+$recipientId = ((int)$matchRow['user1_id'] === $userId) ? (int)$matchRow['user2_id'] : (int)$matchRow['user1_id'];
+
+$workerPayload = [
+    'action_type'  => 'new_message',
+    'match_id'     => $matchId,
+    'recipient_id' => $recipientId,
+    'sender_id'    => $userId,
+    'sender_name'  => $msgRow['sender_name'],
+    'message_text' => $message,
+    'message_type' => $type,
+    'message_row'  => $sharedMessage
+];
+
+$jsonPayload = escapeshellarg(json_encode($workerPayload));
+$workerPath = __DIR__ . "/../notifications/async_worker.php";
+
+// Run in background (Linux method for Railway)
+shell_exec("php $workerPath $jsonPayload > /dev/null 2>&1 &");
 
 $db->close();
 
-// 6. Respond to mobile app
+// 5. Respond to mobile app INSTANTLY
 echo json_encode([
     'status'     => 'success',
     'message_id' => $msgId,
-    'message'    => $socketData['message']
+    'message'    => $sharedMessage
 ]);
 exit();

@@ -224,7 +224,16 @@ function markRead(mysqli $db, int $matchId, int $userId): void {
     );
     $readStmt->bind_param('ssii', $now, $now, $matchId, $userId);
     $readStmt->execute();
+    $affected = $readStmt->affected_rows;
     $readStmt->close();
+
+    // ─── BROADCAST READ STATUS ───
+    if ($affected > 0) {
+        broadcastToSoketi("match_$matchId", "messages_read", [
+            'match_id' => $matchId,
+            'reader_id' => $userId
+        ]);
+    }
 }
 
 function markReceived(mysqli $db, int $matchId, int $userId): void {
