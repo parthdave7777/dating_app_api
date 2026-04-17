@@ -58,54 +58,38 @@ if ($lastId === 0) {
     exit();
 }
 
-// ── LONG POLL ────────────────────────────────────────────────
-// BUG FIX: Increased poll interval from 500ms to 800ms to reduce DB load,
-// which was causing slow responses and piled-up connections.
-// Total timeout kept at 20 seconds.
-$timeout  = 20000; // 20 seconds in ms
-$interval = 800;   // check every 800ms — reduced DB hammering
-$elapsed  = 0;
+// ── NO LONG POLL ─────────────────────────────────────────────
+// We are now using WebSockets for real-time. 
+// This script now only does a SINGLE FAST CHECK and returns.
+// This prevents "Empty Responses" and "10s Delays" in Adminer.
 
-// BUG FIX: Close unused result sets and reuse prepared statements
-// to avoid "commands out of sync" MySQL errors during the loop.
-$lastReadHash = getReadHash($db, $matchId);
+$newStmt = $db->prepare(
+    "SELECT COUNT(*) as cnt FROM messages WHERE match_id = ? AND id > ?"
+);
+$newStmt->bind_param('ii', $matchId, $lastId);
+$newStmt->execute();
+$newCnt = (int)$newStmt->get_result()->fetch_assoc()['cnt'];
+$newStmt->close();
 
-while ($elapsed < $timeout) {
-    // BUG FIX: Use a lightweight COUNT query first before doing full fetch
-    $newStmt = $db->prepare(
-        "SELECT COUNT(*) as cnt FROM messages WHERE match_id = ? AND id > ?"
-    );
-    $newStmt->bind_param('ii', $matchId, $lastId);
-    $newStmt->execute();
-    $newCnt = (int)$newStmt->get_result()->fetch_assoc()['cnt'];
-    $newStmt->close();
-
-    if ($newCnt > 0) {
-        echo json_encode(buildResponse($db, $matchId, $userId, $otherId, $lastId));
-        $db->close();
-        exit();
-    }
-
-    // Check for read/delete/edit status changes
+if ($newCnt > 0) {
+    echo json_encode(buildResponse($db, $matchId, $userId, $otherId, $lastId));
+} else {
+    // Check for read status changes only
     $currentHash = getReadHash($db, $matchId);
     if ($currentHash !== $lastReadHash) {
         echo json_encode(buildFullResponse($db, $matchId, $userId, $otherId));
-        $db->close();
-        exit();
+    } else {
+        echo json_encode([
+            'status'     => 'success',
+            'messages'   => [],
+            'other_user' => getOtherUser($db, $otherId),
+            'timeout'    => false,
+        ]);
     }
-
-    usleep($interval * 1000);
-    $elapsed += $interval;
 }
 
-// Timeout — no changes; client will reconnect immediately
-echo json_encode([
-    'status'     => 'success',
-    'messages'   => [],
-    'other_user' => getOtherUser($db, $otherId),
-    'timeout'    => true,
-]);
 $db->close();
+exit();
 
 // ── Helpers ──────────────────────────────────────────────────
 
