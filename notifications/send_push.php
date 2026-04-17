@@ -181,7 +181,8 @@ function sendPush(
     string $title,
     string $body,
     array  $data = []
-): void {
+): bool {
+    $success = false;
 
     // ── Save to notifications table (History Hub) ───────────────────────────
     // BUG 3 FIX: Persist social interactions to the history table.
@@ -317,6 +318,7 @@ function sendPush(
              . " > /dev/null 2>&1 &";
         exec($cmd);
         error_log("[FCM] Push dispatched async to user $toUserId type=$type");
+        $success = true;
     } else {
         // Option B — blocking curl with fast 3s timeout
         $ch = curl_init($url);
@@ -338,18 +340,23 @@ function sendPush(
         error_log("[FCM] Actual API call to Google took " . round(microtime(true) - $startSend, 3) . "s");
 
         if ($httpCode === 404) {
-            // Token is unregistered (app uninstalled/reinstalled) — clear it
+             error_log("[FCM] ERROR 404: Token is unregistered for user $toUserId. Clearing from DB.");
             $clearStmt = $db->prepare("UPDATE users SET fcm_token = NULL WHERE id = ?");
             $clearStmt->bind_param('i', $toUserId);
             $clearStmt->execute();
             $clearStmt->close();
-            error_log("[FCM] Cleared stale token for user $toUserId");
         } elseif ($httpCode !== 200) {
-            error_log("[FCM] Push failed (HTTP $httpCode) for user $toUserId: $result");
+            error_log("[FCM] FATAL: Google API rejected the push! HTTP $httpCode. Response: " . $result);
+            error_log("[FCM] Payload sent: " . json_encode($message));
         } else {
-            error_log("[FCM] Push sent OK to user $toUserId type=$type");
+            error_log("[FCM] SUCCESS: Push delivered to Google for user $toUserId type=$type");
+            $success = true;
         }
     }
+    if (!$success) {
+        error_log("[FCM] sendPush() returning FALSE for user $toUserId");
+    }
+    return $success;
 }
 } // end if (!function_exists('sendPush'))
 
