@@ -57,6 +57,10 @@ $stmt = $db->prepare($sql);
 $stmt->bind_param($types, ...$params);
 $stmt->execute();
 $stmt->close();
+
+// Clear NITRO cache
+clearProfileCache($userId);
+
 $db->close();
 
 echo json_encode(['status' => 'success']);

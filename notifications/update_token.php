@@ -32,6 +32,10 @@ $stmt = $db->prepare("UPDATE users SET fcm_token = ? WHERE id = ?");
 $stmt->bind_param('si', $fcmToken, $userId);
 $stmt->execute();
 $stmt->close();
+
+// NITRO FIX: Clear cache so send_push.php sees the new token
+clearProfileCache($userId);
+
 $db->close();
 
 echo json_encode(['status' => 'success']);

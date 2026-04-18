@@ -9,9 +9,20 @@
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../notifications/send_push.php';
 
-$redis = getRedis();
+// NITRO STARTUP: Wait for Redis (crucial for Railway/Production)
+$redis = null;
+$retries = 0;
+while ($redis === null && $retries < 10) {
+    echo "[WORKER] Attempting to connect to Redis... (Attempt " . ($retries + 1) . ")\n";
+    $redis = getRedis();
+    if (!$redis) {
+        $retries++;
+        sleep(2);
+    }
+}
+
 if (!$redis) {
-    die("ERROR: Redis is required for the worker system.\n");
+    die("ERROR: Redis is required for the worker system. Please ensure your Redis service is running.\n");
 }
 
 echo "[WORKER] Started at " . date('Y-m-d H:i:s') . "\n";

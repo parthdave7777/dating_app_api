@@ -279,14 +279,21 @@ function dispatchAsync(array $payload): void {
         // Option 1: Fast Redis Push
         $redis->lPush('task_queue', json_encode($payload));
     } else {
-        // Option 2: Fallback to direct background process if Redis is down
+        // Option 2: Fallback to direct background process
         $jsonPayload = escapeshellarg(json_encode($payload));
         $workerPath  = __DIR__ . "/notifications/async_worker.php";
         
         $isWindows = strncasecmp(PHP_OS, 'WIN', 3) === 0;
         if ($isWindows) {
-            // Windows XAMPP fallback (blocking but reliable for dev)
-            $cmd = "php " . escapeshellarg($workerPath) . " " . $jsonPayload;
+            // Robust Windows PHP detection
+            $phpPath = 'php';
+            if (!`where $phpPath 2>nul`) {
+                if (file_exists('C:\xampp\php\php.exe')) {
+                    $phpPath = 'C:\xampp\php\php.exe';
+                }
+            }
+            // Windows XAMPP fallback (using start /B for async)
+            $cmd = "$phpPath " . escapeshellarg($workerPath) . " " . $jsonPayload;
             pclose(popen("start /B $cmd", "r"));
         } else {
             // Linux Production fallback (async fork)
