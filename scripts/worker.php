@@ -47,8 +47,10 @@ while (true) {
         }
 
         $type = $payload['action_type'] ?? 'unknown';
-        echo "[WORKER] Processing: $type\n";
-
+        $logMsg = "[" . date('Y-m-d H:i:s') . "] WORKER: Received task $type\n";
+        echo $logMsg;
+        @file_put_contents(__DIR__ . '/../worker_debug.txt', $logMsg, FILE_APPEND);
+        
         if ($type === 'new_message') {
             processNewMessage($payload);
         } else if ($type === 'messages_read') {
@@ -80,7 +82,7 @@ function processNewMessage($payload) {
     // 2. Send Push Notification
     $msgPreview = ($msgType === 'image') ? '📷 Photo' : $message;
     $db = getDB();
-    sendPush($db, $recipientId, 'message', $senderName, $msgPreview, [
+    $pushRes = sendPush($db, $recipientId, 'message', $senderName, $msgPreview, [
         'match_id'  => (string)$matchId,
         'sender_id' => (string)$senderId,
     ]);
