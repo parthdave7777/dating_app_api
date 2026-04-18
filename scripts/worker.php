@@ -62,7 +62,9 @@ while (true) {
         }
 
     } catch (Exception $e) {
-        echo "[WORKER] Exception: " . $e->getMessage() . "\n";
+        $errMsg = "[" . date('Y-m-d H:i:s') . "] WORKER ERROR: " . $e->getMessage() . "\n";
+        echo $errMsg;
+        @file_put_contents(__DIR__ . '/../worker_debug.txt', $errMsg, FILE_APPEND);
         sleep(2); // Wait a bit before retry
     }
 }
@@ -77,29 +79,32 @@ function processNewMessage($payload) {
     $msgRow      = $payload['message_row'];
 
     // 1. Broadcast to Soketi
+    $logSoketi = "[" . date('Y-m-d H:i:s') . "] WORKER: Broadcasting to Soketi...\n";
+    @file_put_contents(__DIR__ . '/../worker_debug.txt', $logSoketi, FILE_APPEND);
     broadcastToSoketi("match_$matchId", "new_message", ['message' => $msgRow]);
 
     // 2. Send Push Notification
     $msgPreview = ($msgType === 'image') ? '📷 Photo' : $message;
     $db = getDB();
+    $logPush = "[" . date('Y-m-d H:i:s') . "] WORKER: Sending Push to $recipientId...\n";
+    @file_put_contents(__DIR__ . '/../worker_debug.txt', $logPush, FILE_APPEND);
+    
     $pushRes = sendPush($db, $recipientId, 'message', $senderName, $msgPreview, [
         'match_id'  => (string)$matchId,
         'sender_id' => (string)$senderId,
     ]);
     $db->close();
 
-    // 3. Clear Chat List Cache (NITRO) so listing updates
+    // 3. Clear Chat List Cache (NITRO)
     $redis = getRedis();
     if ($redis) {
         $redis->del("user_chats_" . $senderId);
         $redis->del("user_chats_" . $recipientId);
     }
     
-    if ($pushRes) {
-        echo "[WORKER] SUCCESS: Push sent to user $recipientId\n";
-    } else {
-        echo "[WORKER] FAILED: Push could not be sent to user $recipientId. Check send_push logs.\n";
-    }
+    $resultMsg = "[" . date('Y-m-d H:i:s') . "] WORKER: " . ($pushRes ? "SUCCESS" : "FAILED") . " for user $recipientId\n";
+    echo $resultMsg;
+    @file_put_contents(__DIR__ . '/../worker_debug.txt', $resultMsg, FILE_APPEND);
 }
 
 function processMessagesRead($payload) {

@@ -340,16 +340,21 @@ function sendPush(
         error_log("[FCM] Actual API call to Google took " . round(microtime(true) - $startSend, 3) . "s");
 
         if ($httpCode === 404) {
-             error_log("[FCM] ERROR 404: Token is unregistered for user $toUserId. Clearing from DB.");
+             $errMsg = "[FCM] ERROR 404: Token is unregistered for user $toUserId. Clearing from DB.\n";
+             error_log($errMsg);
+             @file_put_contents(__DIR__ . '/../worker_debug.txt', "[" . date('Y-m-d H:i:s') . "] $errMsg", FILE_APPEND);
             $clearStmt = $db->prepare("UPDATE users SET fcm_token = NULL WHERE id = ?");
             $clearStmt->bind_param('i', $toUserId);
             $clearStmt->execute();
             $clearStmt->close();
         } elseif ($httpCode !== 200) {
-            error_log("[FCM] FATAL: Google API rejected the push! HTTP $httpCode. Response: " . $result);
-            error_log("[FCM] Payload sent: " . json_encode($message));
+            $errMsg = "[FCM] FATAL: Google API rejected the push! HTTP $httpCode. Response: " . $result . "\n";
+            error_log($errMsg);
+            @file_put_contents(__DIR__ . '/../worker_debug.txt', "[" . date('Y-m-d H:i:s') . "] $errMsg", FILE_APPEND);
         } else {
-            error_log("[FCM] SUCCESS: Push delivered to Google for user $toUserId type=$type");
+            $okMsg = "[FCM] SUCCESS: Push delivered to Google for user $toUserId\n";
+            error_log($okMsg);
+            @file_put_contents(__DIR__ . '/../worker_debug.txt', "[" . date('Y-m-d H:i:s') . "] $okMsg", FILE_APPEND);
             $success = true;
         }
     }
