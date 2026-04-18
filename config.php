@@ -268,6 +268,33 @@ function generateToken(int $userId): string {
     return "$header.$payload.$signature";
 }
 
+/**
+ * HIGH-PERFORMANCE ASYNC DISPATCHER
+ * Moves expensive background tasks (Push Notifs, Socket Broadcasts) 
+ * to a Redis-backed queue. This prevents spawning PHP processes per-request.
+ */
+function dispatchAsync(array $payload): void {
+    $redis = getRedis();
+    if ($redis) {
+        // Option 1: Fast Redis Push
+        $redis->lPush('task_queue', json_encode($payload));
+    } else {
+        // Option 2: Fallback to direct background process if Redis is down
+        $jsonPayload = escapeshellarg(json_encode($payload));
+        $workerPath  = __DIR__ . "/notifications/async_worker.php";
+        
+        $isWindows = strncasecmp(PHP_OS, 'WIN', 3) === 0;
+        if ($isWindows) {
+            // Windows XAMPP fallback (blocking but reliable for dev)
+            $cmd = "php " . escapeshellarg($workerPath) . " " . $jsonPayload;
+            pclose(popen("start /B $cmd", "r"));
+        } else {
+            // Linux Production fallback (async fork)
+            exec("nohup php " . escapeshellarg($workerPath) . " " . $jsonPayload . " > /dev/null 2>&1 &");
+        }
+    }
+}
+
 // ─── REAL-TIME CHAT (SOKETI) ─────────────────────────────────
 define('SOKETI_HOST',   'soketi-production-3817.up.railway.app');
 define('SOKETI_APP_ID', 'legitdate-app');

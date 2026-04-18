@@ -91,18 +91,9 @@ $logStmt->execute();
 $callLogId = $db->insert_id;
 $logStmt->close();
 
-// ── Create initial call log entry ────────────────────────────
-$logStmt = $db->prepare(
-    "INSERT INTO call_logs (match_id, caller_id, callee_id, status) VALUES (?, ?, ?, 'ringing')"
-);
-$logStmt->bind_param('iii', $matchId, $callerId, $calleeId);
-$logStmt->execute();
-$callLogId = $db->insert_id;
-$logStmt->close();
-
-// ─── BACKGROUND PUSH TRIGGER (NITRO VERSION) ───
+// ─── BACKGROUND PUSH DISPATCH (NITRO Queue) ───
 $workerPayload = [
-    'action_type'  => 'incoming_call', // Use unique action type for worker
+    'action_type'  => 'incoming_call', // Handled by worker
     'recipient_id' => $calleeId,
     'title'        => '📹 Incoming Video Call',
     'body'         => $callerName . ' is calling you…',
@@ -116,10 +107,7 @@ $workerPayload = [
         'sender_id'    => (string)$callerId,
     ]
 ];
-
-$jsonPayload = escapeshellarg(json_encode($workerPayload));
-$workerPath  = __DIR__ . "/../notifications/async_worker.php";
-exec("nohup php $workerPath $jsonPayload > /dev/null 2>&1 < /dev/null &");
+dispatchAsync($workerPayload);
 
 $db->close();
 

@@ -68,16 +68,14 @@ $sharedMessage = [
     'created_at'  =>        $msgRow['created_at'],
 ];
 
-// 6. Non-critical Background Worker Spawn
+// 6. Non-critical Background Dispatch (NITRO Queue)
 $recipientId = ((int)$matchRow['user1_id'] === $userId) ? (int)$matchRow['user2_id'] : (int)$matchRow['user1_id'];
 $workerPayload = [
     'action_type'  => 'new_message', 'match_id' => $matchId, 'recipient_id' => $recipientId,
     'sender_id' => $userId, 'sender_name' => $msgRow['sender_name'],
     'message_text' => $message, 'message_type' => $type, 'message_row' => $sharedMessage
 ];
-$jsonPayload = escapeshellarg(json_encode($workerPayload));
-$workerPath = __DIR__ . "/../notifications/async_worker.php";
-exec("nohup php $workerPath $jsonPayload > /dev/null 2>&1 < /dev/null &");
+dispatchAsync($workerPayload);
 
 $db->close();
 

@@ -62,9 +62,7 @@ $workerPayload = [
     'message_id'  => $messageId,
     'new_text'    => $newText
 ];
-$jsonPayload = escapeshellarg(json_encode($workerPayload));
-$workerPath  = __DIR__ . "/../notifications/async_worker.php";
-exec("nohup php $workerPath $jsonPayload > /dev/null 2>&1 < /dev/null &");
+dispatchAsync($workerPayload);
 
 $db->close();
 

@@ -7,7 +7,23 @@ $userId = getAuthUserId();
 $db = getDB();
 autoSyncUserMeta($userId, $db);
 
-// Single optimised query using JOINs instead of per-row sub-queries
+$redis = getRedis();
+$cacheKey = "user_chats_$userId";
+
+// 1. NITRO CACHE: Try to serve from Redis first (15s TTL)
+if ($redis) {
+    $cached = $redis->get($cacheKey);
+    if ($cached) {
+        header('Content-Type: application/json');
+        echo $cached;
+        exit();
+    }
+}
+
+$db = getDB();
+autoSyncUserMeta($userId, $db);
+
+// Single optimised query using JOINs with index-optimized subqueries
 $stmt = $db->prepare("
     SELECT 
         m.id AS match_id,
@@ -19,7 +35,7 @@ $stmt = $db->prepare("
         lm.is_deleted AS last_is_deleted,
         lm.created_at AS last_message_time,
         lc.started_at AS last_call_time,
-        uc.unread_count
+        (SELECT COUNT(*) FROM messages WHERE match_id = m.id AND sender_id != ? AND is_read = 0) AS unread_count
     FROM matches m
     LEFT JOIN (
         SELECT msg.match_id, msg.message, msg.type, msg.sender_id, msg.is_deleted, msg.created_at
@@ -33,12 +49,6 @@ $stmt = $db->prepare("
         FROM call_logs 
         GROUP BY match_id
     ) lc ON lc.match_id = m.id
-    LEFT JOIN (
-        SELECT match_id, COUNT(*) AS unread_count 
-        FROM messages 
-        WHERE sender_id != ? AND is_read = 0
-        GROUP BY match_id
-    ) uc ON uc.match_id = m.id
     WHERE m.user1_id = ? OR m.user2_id = ?
     ORDER BY GREATEST(
         COALESCE(lm.created_at, m.created_at),
@@ -135,4 +145,11 @@ foreach ($rows as $row) {
 }
 
 $db->close();
-echo json_encode(['status' => 'success', 'chats' => $chats]);
+$response = json_encode(['status' => 'success', 'chats' => $chats]);
+
+// Save to NITRO cache
+if ($redis) {
+    $redis->setex($cacheKey, 15, $response);
+}
+
+echo $response;
