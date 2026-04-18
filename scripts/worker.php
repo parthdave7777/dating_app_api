@@ -92,6 +92,12 @@ function processNewMessage($payload) {
         $redis->del("user_chats_" . $senderId);
         $redis->del("user_chats_" . $recipientId);
     }
+    
+    if ($pushRes) {
+        echo "[WORKER] SUCCESS: Push sent to user $recipientId\n";
+    } else {
+        echo "[WORKER] FAILED: Push could not be sent to user $recipientId. Check send_push logs.\n";
+    }
 }
 
 function processMessagesRead($payload) {

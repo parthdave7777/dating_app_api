@@ -303,10 +303,10 @@ function dispatchAsync(array $payload): void {
 }
 
 // ─── REAL-TIME CHAT (SOKETI) ─────────────────────────────────
-define('SOKETI_HOST',   'soketi-production-3817.up.railway.app');
-define('SOKETI_APP_ID', 'legitdate-app');
-define('SOKETI_KEY',    'legit-key-123');
-define('SOKETI_SECRET', 'legit-secret-456');
+define('SOKETI_HOST',   getenv('SOKETI_HOST')   ?: 'soketi-production-3817.up.railway.app');
+define('SOKETI_APP_ID', getenv('SOKETI_APP_ID') ?: 'legitdate-app');
+define('SOKETI_KEY',    getenv('SOKETI_APP_KEY')    ?: 'legit-key-123');
+define('SOKETI_SECRET', getenv('SOKETI_APP_SECRET') ?: 'legit-secret-456');
 
 /**
  * Broadcasts data to Soketi via HTTP API
