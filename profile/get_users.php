@@ -34,6 +34,16 @@ $myLng  = (float)($me['longitude'] ?? 0);
 $myCity = trim(strtolower($me['city'] ?? ''));
 $hasCoords = ($myLat != 0 && $myLng != 0);
 
+// If NOT global discovery, we MUST have coords. If missing, return empty.
+if (!$isGlobal && !$hasCoords) {
+    echo json_encode([
+        'status' => 'success',
+        'users' => [],
+        'metadata' => ['message' => 'Location required for local discovery']
+    ]);
+    exit();
+}
+
 // Discovery settings — GET params override stored prefs
 $minAge  = isset($_GET['min_age'])  ? (int)$_GET['min_age']  : (int)($me['discovery_min_age']  ?? 18);
 $maxAge  = isset($_GET['max_age'])  ? (int)$_GET['max_age']  : (int)($me['discovery_max_age']  ?? 100);
@@ -70,7 +80,7 @@ $distSql = $hasCoords
            * cos(radians(u.longitude) - radians($myLng))
            + sin(radians($myLat)) * sin(radians(u.latitude))
        )"
-    : "999";
+    : "0";
 
 // 7. Bounding-box pre-filter (cheap lat/lng range check before trig)
 $boundsCondition = "";
@@ -80,7 +90,8 @@ if ($hasCoords && !$isGlobal) {
     $minLat = $myLat - $latRange; $maxLat = $myLat + $latRange;
     $minLng = $myLng - $lngRange; $maxLng = $myLng + $lngRange;
     $boundsCondition = "AND u.latitude  BETWEEN $minLat AND $maxLat
-                        AND u.longitude BETWEEN $minLng AND $maxLng";
+                        AND u.longitude BETWEEN $minLng AND $maxLng
+                        AND u.latitude != 0 AND u.longitude != 0";
     // Exact distance filter applied after fetch (avoids double trig in WHERE + SELECT)
 }
 
