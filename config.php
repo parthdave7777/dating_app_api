@@ -197,6 +197,7 @@ function getCachedProfileData(mysqli $db, int $targetId): ?array {
                lifestyle_diet, lifestyle_schedule, communication_style, relationship_goal,
                latitude, longitude, city, state, country, is_verified, profile_complete, setup_completed,
                discovery_min_age, discovery_max_age, discovery_max_dist, discovery_min_dist, global_discovery,
+               stealth_radius,
                notif_matches, notif_messages, notif_likes, notif_who_swiped, notif_activity,
                credits, premium_credits
         FROM users WHERE id = ?

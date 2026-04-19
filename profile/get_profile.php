@@ -116,6 +116,7 @@ echo json_encode([
         'discovery_max_dist' => (int)  ($user['discovery_max_dist'] ?? 50),
         'discovery_min_dist' => (int)  ($user['discovery_min_dist'] ?? 0),
         'global_discovery'   => (bool) ($user['global_discovery']   ?? 1),
+        'stealth_radius'     => (int)  ($user['stealth_radius']     ?? 0),
         'is_match'           => (bool) $isMatch,
         'match_id'           => $matchId,
         'notif_matches'      => (bool) ($user['notif_matches']      ?? 1),

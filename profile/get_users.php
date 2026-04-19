@@ -114,6 +114,7 @@ $sql = "
       AND bl.blocker_id IS NULL
       AND mt.user1_id   IS NULL
       AND (sw.action IS NULL OR sw.action = 'dislike')
+      AND ($distSql) >= u.stealth_radius
       $boundsCondition
       $globalCondition
     ORDER BY " . ($isGlobal ? "u.last_active DESC" : "distance_km ASC") . "

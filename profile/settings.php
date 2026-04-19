@@ -9,6 +9,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $userId = getAuthUserId();
 $body   = json_decode(file_get_contents('php://input'), true) ?? [];
 
+// DEBUG: Log incoming settings update
+file_put_contents(__DIR__ . '/debug_settings.txt', date('[Y-m-d H:i:s] ') . "User $userId Update: " . json_encode($body) . PHP_EOL, FILE_APPEND);
+
 $db = getDB();
 
 $allowed = [
@@ -22,7 +25,8 @@ $allowed = [
     'discovery_max_dist',
     'global_discovery',
     'discovery_min_dist',
-    'notif_activity'
+    'notif_activity',
+    'stealth_radius'
 ];
 $updates = [];
 $params  = [];

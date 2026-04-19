@@ -30,7 +30,16 @@ if (empty($fcmToken)) {
 $db   = getDB();
 $stmt = $db->prepare("UPDATE users SET fcm_token = ? WHERE id = ?");
 $stmt->bind_param('si', $fcmToken, $userId);
-$stmt->execute();
+
+if ($stmt->execute()) {
+    clearProfileCache($userId);
+    $logMsg = "[TOKEN UPDATE] User $userId updated token to: " . substr($fcmToken, 0, 15) . "...\n";
+    @file_put_contents(__DIR__ . '/../worker_debug.txt', "[" . date('Y-m-d H:i:s') . "] $logMsg", FILE_APPEND);
+    echo json_encode(['status' => 'success', 'message' => 'Token updated']);
+} else {
+    echo json_encode(['status' => 'error', 'message' => 'Database update failed']);
+}
+
 $stmt->close();
 
 // NITRO FIX: Clear cache so send_push.php sees the new token
