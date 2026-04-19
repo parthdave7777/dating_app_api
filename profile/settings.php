@@ -26,7 +26,8 @@ $allowed = [
     'global_discovery',
     'discovery_min_dist',
     'notif_activity',
-    'stealth_radius'
+    'stealth_radius',
+    'show_on_map'
 ];
 $updates = [];
 $params  = [];
