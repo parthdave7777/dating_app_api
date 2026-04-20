@@ -18,7 +18,35 @@ if (!$viewedId || $viewedId === $userId) {
 
 $db = getDB();
 
-// Upsert — update timestamp if already viewed
+// 1. Check if they are matched (Matches view for free)
+$matchCheck = $db->prepare("
+    SELECT id FROM matches 
+    WHERE (user_one_id = ? AND user_two_id = ?) 
+       OR (user_one_id = ? AND user_two_id = ?)
+    LIMIT 1
+");
+$matchCheck->bind_param('iiii', $userId, $viewedId, $viewedId, $userId);
+$matchCheck->execute();
+$isMatched = $matchCheck->get_result()->num_rows > 0;
+$matchCheck->close();
+
+// 2. Check if already viewed (to determine if we should charge)
+$viewCheck = $db->prepare("SELECT id FROM profile_views WHERE viewer_id = ? AND viewed_id = ?");
+$viewCheck->bind_param('ii', $userId, $viewedId);
+$viewCheck->execute();
+$alreadyViewed = $viewCheck->get_result()->num_rows > 0;
+$viewCheck->close();
+
+$newBalance = null;
+if (!$isMatched && !$alreadyViewed) {
+    if (!deductCredits($db, $userId, CREDIT_COST_PROFILE_VIEW, "Viewed Profile ID: $viewedId")) {
+        echo json_encode(['status' => 'error', 'message' => 'Insufficient credits to view profile', 'error_code' => 'INSUFFICIENT_CREDITS']);
+        exit();
+    }
+    $newBalance = getUserCredits($db, $userId);
+}
+
+// 3. Upsert view record
 $stmt = $db->prepare(
     "INSERT INTO profile_views (viewer_id, viewed_id)
      VALUES (?, ?)
@@ -66,4 +94,4 @@ if (!$hasRecent) {
 }
 
 $db->close();
-echo json_encode(['status' => 'success']);
+echo json_encode(['status' => 'success', 'new_balance' => $newBalance]);

@@ -368,8 +368,9 @@ function verifyToken(string $token): ?int {
 define('CREDIT_COST_LIKE',        5);
 define('CREDIT_COST_SUPERLIKE',  25);
 define('CREDIT_COST_COMPLIMENT', 50);
-define('CREDIT_COST_REWIND',     10);
+define('CREDIT_COST_REWIND',     0);
 define('CREDIT_COST_VIEW_SECRET', 50); 
+define('CREDIT_COST_PROFILE_VIEW', 10); 
 define('CREDIT_COST_CALL_MIN',   50); 
 define('DAILY_FREE_CREDITS',     100);
 
