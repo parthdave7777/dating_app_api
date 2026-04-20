@@ -90,15 +90,18 @@ if (!empty($userIds)) {
     }
 }
 
-$db->close();
-
-// Get current user credits for UI update
-$db2 = getDB();
-$uStmt = $db2->prepare("SELECT (credits + premium_credits) as total FROM users WHERE id = ?");
+// Get current user credits for UI update using existing $db
+$uStmt = $db->prepare("SELECT (credits + premium_credits) as total FROM users WHERE id = ?");
 $uStmt->bind_param('i', $userId);
 $uStmt->execute();
-$totalCredits = $uStmt->get_result()->fetch_assoc()['total'] ?? 0;
+$rowC = $uStmt->get_result()->fetch_assoc();
+$totalCredits = $rowC['total'] ?? 0;
 $uStmt->close();
-$db2->close();
 
-echo json_encode(['status' => 'success', 'users' => $users, 'credits' => (int)$totalCredits]);
+$db->close();
+
+echo json_encode([
+    'status' => 'success', 
+    'users' => $users, 
+    'credits' => (int)$totalCredits
+]);
