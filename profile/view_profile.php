@@ -38,8 +38,6 @@ $viewCheck->execute();
 $alreadyViewed = $viewCheck->get_result()->num_rows > 0;
 $viewCheck->close();
 
-error_log("ViewProfile check: isMatched=" . ($isMatched ? '1' : '0') . " alreadyViewed=" . ($alreadyViewed ? '1' : '0'));
-
 try {
     if (!$isMatched && !$alreadyViewed) {
         if (!deductCredits($db, $userId, CREDIT_COST_PROFILE_VIEW, "Viewed Profile ID: $viewedId")) {
