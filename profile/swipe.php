@@ -21,12 +21,27 @@ $db = getDB();
 
 // ─── REWIND LOGIC ──────────────────────────────────────────────
 if ($action === 'rewind') {
-    $del = $db->prepare("DELETE FROM swipes WHERE swiper_id = ? AND swiped_id = ?");
-    $del->bind_param('ii', $userId, $swipedUserId);
-    $del->execute();
-    $del->close();
-    
-    echo json_encode(['status' => 'success', 'message' => 'Action rewound', 'new_balance' => getUserCredits($db, $userId)]);
+    $db->begin_transaction();
+    try {
+        if (!deductCredits($db, $userId, CREDIT_COST_REWIND, "Rewind interaction with ID: $swipedUserId")) {
+            throw new Exception("INSUFFICIENT_CREDITS");
+        }
+
+        $del = $db->prepare("DELETE FROM swipes WHERE swiper_id = ? AND swiped_id = ?");
+        $del->bind_param('ii', $userId, $swipedUserId);
+        $del->execute();
+        $del->close();
+        
+        $db->commit();
+        echo json_encode(['status' => 'success', 'message' => 'Action rewound', 'new_balance' => getUserCredits($db, $userId)]);
+    } catch (Exception $e) {
+        $db->rollback();
+        if ($e->getMessage() === "INSUFFICIENT_CREDITS") {
+            echo json_encode(['status' => 'error', 'message' => 'Insufficient credits for rewind', 'error_code' => 'INSUFFICIENT_CREDITS']);
+        } else {
+            echo json_encode(['status' => 'error', 'message' => 'Rewind failed: ' . $e->getMessage()]);
+        }
+    }
     exit();
 }
 
@@ -68,15 +83,40 @@ if ((int)$spamRow['cnt'] >= 100) {
 }
 
 
-// Save swipe (ignore duplicate)
-$now = date('Y-m-d H:i:s');
-$stmt = $db->prepare(
-    "INSERT INTO swipes (swiper_id, swiped_id, action, created_at) VALUES (?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE action = ?, created_at = ?"
-);
-$stmt->bind_param('iissss', $userId, $swipedUserId, $action, $now, $action, $now);
-$stmt->execute();
-$stmt->close();
+// ── Credit Deduction Logic ───────────────────────────────
+$cost = 0;
+if ($action === 'like') $cost = CREDIT_COST_LIKE;
+if ($action === 'superlike') $cost = CREDIT_COST_SUPERLIKE;
+if ($action === 'compliment') $cost = CREDIT_COST_COMPLIMENT;
+
+$db->begin_transaction();
+try {
+    if ($cost > 0) {
+        if (!deductCredits($db, $userId, $cost, ucfirst($action) . " on User ID: $swipedUserId")) {
+            throw new Exception("INSUFFICIENT_CREDITS");
+        }
+    }
+
+    // Save swipe (ignore duplicate)
+    $now = date('Y-m-d H:i:s');
+    $stmt = $db->prepare(
+        "INSERT INTO swipes (swiper_id, swiped_id, action, created_at) VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE action = ?, created_at = ?"
+    );
+    $stmt->bind_param('iissss', $userId, $swipedUserId, $action, $now, $action, $now);
+    $stmt->execute();
+    $stmt->close();
+    
+    $db->commit();
+} catch (Exception $e) {
+    $db->rollback();
+    if ($e->getMessage() === "INSUFFICIENT_CREDITS") {
+        echo json_encode(['status' => 'error', 'message' => 'Insufficient credits', 'error_code' => 'INSUFFICIENT_CREDITS']);
+    } else {
+        echo json_encode(['status' => 'error', 'message' => 'Action failed: ' . $e->getMessage()]);
+    }
+    exit();
+}
 
 // ── Update last_active for swiper ─────────────────────────
 $db->query("UPDATE users SET last_active = '$now' WHERE id = $userId");

@@ -40,7 +40,8 @@ $sql = "
         u.id, u.full_name, u.age, u.gender, u.latitude, u.longitude,
         u.is_verified, (u.last_active > DATE_SUB(NOW(), INTERVAL 15 MINUTE)) as is_online,
         ($distSql) AS distance_km,
-        EXISTS(SELECT 1 FROM matches WHERE (user1_id = $userId AND user2_id = u.id) OR (user1_id = u.id AND user2_id = $userId)) as is_match
+        EXISTS(SELECT 1 FROM matches WHERE (user1_id = $userId AND user2_id = u.id) OR (user1_id = u.id AND user2_id = $userId)) as is_match,
+        EXISTS(SELECT 1 FROM profile_views WHERE viewer_id = $userId AND viewed_id = u.id) as viewed_before
     FROM users u
     LEFT JOIN blocks bl ON (bl.blocker_id = $userId AND bl.blocked_user_id = u.id)
                         OR (bl.blocker_id = u.id   AND bl.blocked_user_id = $userId)
