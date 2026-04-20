@@ -38,23 +38,36 @@ $alreadyViewed = $viewCheck->get_result()->num_rows > 0;
 $viewCheck->close();
 
 $newBalance = null;
-if (!$isMatched && !$alreadyViewed) {
-    if (!deductCredits($db, $userId, CREDIT_COST_PROFILE_VIEW, "Viewed Profile ID: $viewedId")) {
-        echo json_encode(['status' => 'error', 'message' => 'Insufficient credits to view profile', 'error_code' => 'INSUFFICIENT_CREDITS']);
-        exit();
-    }
-    $newBalance = getUserCredits($db, $userId);
-}
+$db->begin_transaction();
 
-// 3. Upsert view record
-$stmt = $db->prepare(
-    "INSERT INTO profile_views (viewer_id, viewed_id)
-     VALUES (?, ?)
-     ON DUPLICATE KEY UPDATE viewed_at = NOW()"
-);
-$stmt->bind_param('ii', $userId, $viewedId);
-$stmt->execute();
-$stmt->close();
+try {
+    if (!$isMatched && !$alreadyViewed) {
+        if (!deductCredits($db, $userId, CREDIT_COST_PROFILE_VIEW, "Viewed Profile ID: $viewedId")) {
+            throw new Exception("INSUFFICIENT_CREDITS");
+        }
+    }
+
+    // 3. Upsert view record
+    $stmt = $db->prepare(
+        "INSERT INTO profile_views (viewer_id, viewed_id)
+         VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE viewed_at = NOW()"
+    );
+    $stmt->bind_param('ii', $userId, $viewedId);
+    $stmt->execute();
+    $stmt->close();
+    
+    $db->commit();
+    $newBalance = getUserCredits($db, $userId);
+} catch (Exception $e) {
+    $db->rollback();
+    if ($e->getMessage() === "INSUFFICIENT_CREDITS") {
+        echo json_encode(['status' => 'error', 'message' => 'Insufficient credits to view profile', 'error_code' => 'INSUFFICIENT_CREDITS']);
+    } else {
+        echo json_encode(['status' => 'error', 'message' => 'Transaction failed: ' . $e->getMessage()]);
+    }
+    exit();
+}
 
 // ── Send Notification (with cooldown) ─────────────────────────
 require_once __DIR__ . '/../notifications/send_push.php';

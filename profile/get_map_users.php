@@ -1,88 +1,79 @@
 <?php
-// profile/get_map_users.php — Optimized Map Discovery
+// profile/get_map_users.php — Dedicated Map Fetch (Higher limit, includes matches)
 require_once __DIR__ . '/../config.php';
 
 $userId = getAuthUserId();
 $db = getDB();
 
-// 1. Fetch Me
-$meStmt = $db->prepare("SELECT latitude, longitude, discovery_max_dist, gender FROM users WHERE id = ?");
+$meStmt = $db->prepare("SELECT latitude, longitude, discovery_max_dist FROM users WHERE id = ?");
 $meStmt->bind_param('i', $userId);
 $meStmt->execute();
 $me = $meStmt->get_result()->fetch_assoc();
 $meStmt->close();
 
-if (!$me) {
-    http_response_code(404);
-    echo json_encode(['status' => 'error', 'message' => 'Profile not found']);
+$myLat    = (float)($me['latitude'] ?? 0);
+$myLng    = (float)($me['longitude'] ?? 0);
+$maxDist  = (int)($me['discovery_max_dist'] ?? 50);
+$hasCoords = ($myLat != 0 && $myLng != 0);
+
+if (!$hasCoords) {
+    echo json_encode(['status' => 'success', 'users' => []]);
     exit();
 }
 
-$myLat = (float)($me['latitude'] ?? 0);
-$myLng = (float)($me['longitude'] ?? 0);
-$maxDist = (int)($me['discovery_max_dist'] ?? 50);
-
-if ($myLat == 0 || $myLng == 0) {
-    echo json_encode(['status' => 'success', 'users' => []]); // Silent empty if no location
-    exit();
-}
-
-// 2. Logic: Number of profiles based on distance range
-// 0-50: 5, 51-100: 10, >100: 20
-$limit = 5;
-if ($maxDist > 50)  $limit = 10;
-if ($maxDist > 100) $limit = 20;
-
-// 3. Gender Target
-$myGender = strtolower($me['gender'] ?? '');
-$targetGenderEsc = ($myGender === 'woman') ? 'man' : 'woman';
-
-// 4. Distance SQL
+// Map specific SQL: Includes matches, higher limit (150)
 $distSql = "6371 * acos(
     cos(radians($myLat)) * cos(radians(u.latitude))
     * cos(radians(u.longitude) - radians($myLng))
     + sin(radians($myLat)) * sin(radians(u.latitude))
 )";
 
-// 5. Query
+$limit = 150; 
+
 $sql = "
-    SELECT u.id, u.full_name, u.age, u.latitude, u.longitude, u.city,
-           ($distSql) AS distance_km,
-           up.photo_url as dp_url
+    SELECT
+        u.id, u.full_name, u.age, u.gender, u.latitude, u.longitude,
+        u.is_verified, (strtotime(u.last_active) > (time() - 300)) as is_online,
+        ($distSql) AS distance_km,
+        EXISTS(SELECT 1 FROM matches WHERE (user1_id = $userId AND user2_id = u.id) OR (user1_id = u.id AND user2_id = $userId)) as is_match
     FROM users u
-    LEFT JOIN user_photos up ON up.user_id = u.id AND up.is_dp = 1
-    LEFT JOIN swipes sw ON sw.swiper_id = $userId AND sw.swiped_id = u.id
     LEFT JOIN blocks bl ON (bl.blocker_id = $userId AND bl.blocked_user_id = u.id)
-                        OR (bl.blocker_id = u.id AND bl.blocked_user_id = $userId)
+                        OR (bl.blocker_id = u.id   AND bl.blocked_user_id = $userId)
     WHERE u.id != $userId
-      AND u.show_in_discovery = 1
       AND u.show_on_map = 1
-      AND (
-            (LOWER(u.gender) IN ('man','male','m')       AND '$targetGenderEsc' = 'man')
-          OR (LOWER(u.gender) IN ('woman','female','w')   AND '$targetGenderEsc' = 'woman')
-      )
       AND bl.blocker_id IS NULL
-      AND sw.action IS NULL
-      AND ($distSql) BETWEEN 0 AND $maxDist
-      AND ($distSql) >= u.stealth_radius
       AND u.latitude != 0 AND u.longitude != 0
-    ORDER BY RAND()
+      AND ($distSql) <= $maxDist
+      AND ($distSql) >= u.stealth_radius
+    ORDER BY distance_km ASC
     LIMIT $limit
 ";
 
-$res = $db->query($sql);
+$result = $db->query($sql);
 $users = [];
-while ($row = $res->fetch_assoc()) {
-    $row['dp_url'] = cloudinaryTransform($row['dp_url'], 'q_auto,f_auto,w_200,h_200,c_fill');
-    $row['distance_km'] = round((float)$row['distance_km'], 1);
+$userIds = [];
+
+while ($row = $result->fetch_assoc()) {
+    $row['id'] = (int)$row['id'];
+    $row['distance_km'] = round((float)$row['distance_km'], 2);
+    $row['is_match'] = (bool)$row['is_match'];
     $users[] = $row;
+    $userIds[] = $row['id'];
+}
+
+// Fetch photos
+if (!empty($userIds)) {
+    $idList = implode(',', $userIds);
+    $photoRes = $db->query("SELECT user_id, photo_url FROM user_photos WHERE user_id IN ($idList) AND is_dp = 1");
+    $photos = [];
+    while($p = $photoRes->fetch_assoc()) {
+        $photos[$p['user_id']] = cloudinaryTransform($p['photo_url'], 'q_auto,f_auto,w_200');
+    }
+    
+    foreach ($users as &$u) {
+        $u['dp_url'] = $photos[$u['id']] ?? '';
+    }
 }
 
 $db->close();
-
-echo json_encode([
-    'status' => 'success',
-    'users' => $users,
-    'metadata' => ['limit_applied' => $limit, 'range' => $maxDist]
-]);
-?>
+echo json_encode(['status' => 'success', 'users' => $users]);

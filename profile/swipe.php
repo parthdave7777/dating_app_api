@@ -11,13 +11,24 @@ $userId = getAuthUserId();
 $body   = json_decode(file_get_contents('php://input'), true);
 
 $swipedUserId = (int)   ($body['swiped_user_id'] ?? 0);
-$action       = trim($body['action'] ?? ''); // like | dislike | superlike | compliment
+$action       = trim($body['action'] ?? ''); 
 
-if (!$swipedUserId || !in_array($action, ['like', 'dislike', 'superlike', 'compliment'])) {
+if (!$swipedUserId || !in_array($action, ['like', 'dislike', 'superlike', 'compliment', 'rewind'])) {
     echo json_encode(['status' => 'error', 'message' => 'swiped_user_id and valid action required']);
     exit();
 }
 $db = getDB();
+
+// ─── REWIND LOGIC ──────────────────────────────────────────────
+if ($action === 'rewind') {
+    $del = $db->prepare("DELETE FROM swipes WHERE swiper_id = ? AND swiped_id = ?");
+    $del->bind_param('ii', $userId, $swipedUserId);
+    $del->execute();
+    $del->close();
+    
+    echo json_encode(['status' => 'success', 'message' => 'Action rewound', 'new_balance' => getUserCredits($db, $userId)]);
+    exit();
+}
 
 // ─── CREDIT DEDUCTION ──────────────────────────────────────────
 $cost = 0;
