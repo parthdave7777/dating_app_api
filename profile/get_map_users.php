@@ -91,7 +91,7 @@ if (!empty($userIds)) {
 }
 
 // Get current user credits for UI update using existing $db
-$uStmt = $db->prepare("SELECT (credits + premium_credits) as total FROM users WHERE id = ?");
+$uStmt = $db->prepare("SELECT (COALESCE(credits, 0) + COALESCE(premium_credits, 0)) as total FROM users WHERE id = ?");
 $uStmt->bind_param('i', $userId);
 $uStmt->execute();
 $rowC = $uStmt->get_result()->fetch_assoc();

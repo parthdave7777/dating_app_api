@@ -40,9 +40,6 @@ $viewCheck->close();
 
 error_log("ViewProfile check: isMatched=" . ($isMatched ? '1' : '0') . " alreadyViewed=" . ($alreadyViewed ? '1' : '0'));
 
-$newBalance = null;
-$db->begin_transaction();
-
 try {
     if (!$isMatched && !$alreadyViewed) {
         if (!deductCredits($db, $userId, CREDIT_COST_PROFILE_VIEW, "Viewed Profile ID: $viewedId")) {
@@ -60,16 +57,13 @@ try {
     $stmt->execute();
     $stmt->close();
     
-    $db->commit();
     $newBalance = getUserCredits($db, $userId);
 } catch (Exception $e) {
-    $db->rollback();
     if ($e->getMessage() === "INSUFFICIENT_CREDITS") {
         echo json_encode(['status' => 'error', 'message' => 'Insufficient credits to view profile', 'error_code' => 'INSUFFICIENT_CREDITS']);
     } else {
         echo json_encode(['status' => 'error', 'message' => 'Transaction failed: ' . $e->getMessage()]);
     }
-    exit();
 }
 
 // ── Send Notification (with cooldown) ─────────────────────────
@@ -110,4 +104,8 @@ if (!$hasRecent) {
 }
 
 $db->close();
-echo json_encode(['status' => 'success', 'new_balance' => $newBalance]);
+echo json_encode([
+    'status' => 'success', 
+    'new_balance' => (int)$newBalance,
+    'was_charged' => (!$isMatched && !$alreadyViewed)
+]);
