@@ -42,10 +42,13 @@ $photos = $profileData['photos'];
 $dpUrl  = $profileData['dp_url'];
 $posts  = $profileData['posts'];
 
-// 3. Dynamic Viewer-Specific Logic (Match Status)
+// 3. Dynamic Viewer-Specific Logic (Match Status & Swipe Status)
 $isMatch = false;
 $matchId = null;
+$hasSwiped = false;
+
 if ($userId !== $targetId) {
+    // Match check
     $mStmt = $db->prepare("SELECT id FROM matches WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)");
     $u1 = min($userId, $targetId); $u2 = max($userId, $targetId);
     $mStmt->bind_param('iiii', $u1, $u2, $u1, $u2);
@@ -56,6 +59,13 @@ if ($userId !== $targetId) {
         $matchId = (int) $mRow['id'];
     }
     $mStmt->close();
+
+    // Swipe check
+    $sStmt = $db->prepare("SELECT id FROM swipes WHERE swiper_id = ? AND swiped_id = ?");
+    $sStmt->bind_param('ii', $userId, $targetId);
+    $sStmt->execute();
+    $hasSwiped = $sStmt->get_result()->num_rows > 0;
+    $sStmt->close();
 }
 
 // 4. Distance Calculation
@@ -119,6 +129,7 @@ echo json_encode([
         'stealth_radius'     => (int)  ($user['stealth_radius']     ?? 0),
         'is_match'           => (bool) $isMatch,
         'match_id'           => $matchId,
+        'has_swiped'         => (bool) $hasSwiped,
         'notif_matches'      => (bool) ($user['notif_matches']      ?? 1),
         'notif_messages'     => (bool) ($user['notif_messages']     ?? 1),
         'notif_likes'        => (bool) ($user['notif_likes']        ?? 1),

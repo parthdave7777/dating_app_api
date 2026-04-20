@@ -1,9 +1,8 @@
 <?php
-// profile/get_map_users.php — Dedicated Map Fetch (Higher limit, includes matches)
 require_once __DIR__ . '/../config.php';
-
 $userId = getAuthUserId();
 $db = getDB();
+header('Content-Type: application/json');
 
 $meStmt = $db->prepare("SELECT latitude, longitude, discovery_max_dist FROM users WHERE id = ?");
 $meStmt->bind_param('i', $userId);
@@ -11,21 +10,27 @@ $meStmt->execute();
 $me = $meStmt->get_result()->fetch_assoc();
 $meStmt->close();
 
+if (!$me) {
+    echo json_encode(['status' => 'error', 'message' => 'User not found']);
+    exit();
+}
+
 $myLat    = (float)($me['latitude'] ?? 0);
 $myLng    = (float)($me['longitude'] ?? 0);
-$maxDist  = (int)($me['discovery_max_dist'] ?? 50);
 $hasCoords = ($myLat != 0 && $myLng != 0);
 
 if (!$hasCoords) {
-    echo json_encode(['status' => 'success', 'users' => []]);
+    echo json_encode(['status' => 'success', 'users' => [], 'message' => 'Your location is missing']);
     exit();
 }
 
 // Map specific SQL: Includes matches, higher limit (150)
 $distSql = "6371 * acos(
-    cos(radians($myLat)) * cos(radians(u.latitude))
-    * cos(radians(u.longitude) - radians($myLng))
-    + sin(radians($myLat)) * sin(radians(u.latitude))
+    LEAST(1.0, GREATEST(-1.0, 
+        cos(radians($myLat)) * cos(radians(u.latitude))
+        * cos(radians(u.longitude) - radians($myLng))
+        + sin(radians($myLat)) * sin(radians(u.latitude))
+    ))
 )";
 
 $limit = 150; 
@@ -33,23 +38,27 @@ $limit = 150;
 $sql = "
     SELECT
         u.id, u.full_name, u.age, u.gender, u.latitude, u.longitude,
-        u.is_verified, (strtotime(u.last_active) > (time() - 300)) as is_online,
+        u.is_verified, (u.last_active > DATE_SUB(NOW(), INTERVAL 15 MINUTE)) as is_online,
         ($distSql) AS distance_km,
         EXISTS(SELECT 1 FROM matches WHERE (user1_id = $userId AND user2_id = u.id) OR (user1_id = u.id AND user2_id = $userId)) as is_match
     FROM users u
     LEFT JOIN blocks bl ON (bl.blocker_id = $userId AND bl.blocked_user_id = u.id)
                         OR (bl.blocker_id = u.id   AND bl.blocked_user_id = $userId)
     WHERE u.id != $userId
-      AND u.show_on_map = 1
+      AND COALESCE(u.show_on_map, 1) = 1
       AND bl.blocker_id IS NULL
       AND u.latitude != 0 AND u.longitude != 0
-      AND ($distSql) <= $maxDist
-      AND ($distSql) >= u.stealth_radius
+      AND ($distSql) >= COALESCE(u.stealth_radius, 0)
     ORDER BY distance_km ASC
     LIMIT $limit
 ";
 
 $result = $db->query($sql);
+if (!$result) {
+    echo json_encode(['status' => 'error', 'message' => 'Query failed: ' . $db->error]);
+    exit();
+}
+
 $users = [];
 $userIds = [];
 
@@ -66,8 +75,10 @@ if (!empty($userIds)) {
     $idList = implode(',', $userIds);
     $photoRes = $db->query("SELECT user_id, photo_url FROM user_photos WHERE user_id IN ($idList) AND is_dp = 1");
     $photos = [];
-    while($p = $photoRes->fetch_assoc()) {
-        $photos[$p['user_id']] = cloudinaryTransform($p['photo_url'], 'q_auto,f_auto,w_200');
+    if ($photoRes) {
+        while($p = $photoRes->fetch_assoc()) {
+            $photos[$p['user_id']] = cloudinaryTransform($p['photo_url'], 'q_auto,f_auto,w_200');
+        }
     }
     
     foreach ($users as &$u) {
