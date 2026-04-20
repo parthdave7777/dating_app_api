@@ -38,6 +38,8 @@ $viewCheck->execute();
 $alreadyViewed = $viewCheck->get_result()->num_rows > 0;
 $viewCheck->close();
 
+error_log("ViewProfile check: isMatched=" . ($isMatched ? '1' : '0') . " alreadyViewed=" . ($alreadyViewed ? '1' : '0'));
+
 $newBalance = null;
 $db->begin_transaction();
 

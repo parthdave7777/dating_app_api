@@ -4,7 +4,7 @@ $userId = getAuthUserId();
 $db = getDB();
 header('Content-Type: application/json');
 
-$meStmt = $db->prepare("SELECT latitude, longitude, discovery_max_dist FROM users WHERE id = ?");
+$meStmt = $db->prepare("SELECT latitude, longitude, discovery_max_dist, stealth_radius FROM users WHERE id = ?");
 $meStmt->bind_param('i', $userId);
 $meStmt->execute();
 $me = $meStmt->get_result()->fetch_assoc();
@@ -17,6 +17,7 @@ if (!$me) {
 
 $myLat    = (float)($me['latitude'] ?? 0);
 $myLng    = (float)($me['longitude'] ?? 0);
+$myStealthRadius = (int)($me['stealth_radius'] ?? 0);
 $hasCoords = ($myLat != 0 && $myLng != 0);
 
 if (!$hasCoords) {
@@ -50,6 +51,7 @@ $sql = "
       AND bl.blocker_id IS NULL
       AND u.latitude != 0 AND u.longitude != 0
       AND ($distSql) >= COALESCE(u.stealth_radius, 0)
+      AND ($distSql) >= $myStealthRadius
     ORDER BY distance_km ASC
     LIMIT $limit
 ";
@@ -89,4 +91,14 @@ if (!empty($userIds)) {
 }
 
 $db->close();
-echo json_encode(['status' => 'success', 'users' => $users]);
+
+// Get current user credits for UI update
+$db2 = getDB();
+$uStmt = $db2->prepare("SELECT (credits + premium_credits) as total FROM users WHERE id = ?");
+$uStmt->bind_param('i', $userId);
+$uStmt->execute();
+$totalCredits = $uStmt->get_result()->fetch_assoc()['total'] ?? 0;
+$uStmt->close();
+$db2->close();
+
+echo json_encode(['status' => 'success', 'users' => $users, 'credits' => (int)$totalCredits]);

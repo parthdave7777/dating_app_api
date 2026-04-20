@@ -14,7 +14,7 @@ $db->query("UPDATE users SET is_new_user_boost = 0
 $meStmt = $db->prepare("
     SELECT age, gender, latitude, longitude, city,
            discovery_min_age, discovery_max_age,
-           discovery_min_dist, discovery_max_dist, global_discovery
+           discovery_min_dist, discovery_max_dist, global_discovery, stealth_radius
     FROM users WHERE id = ?
 ");
 $meStmt->bind_param('i', $userId);
@@ -32,6 +32,7 @@ $myAge  = (int)($me['age'] ?? 20);
 $myLat  = (float)($me['latitude'] ?? 0);
 $myLng  = (float)($me['longitude'] ?? 0);
 $myCity = trim(strtolower($me['city'] ?? ''));
+$myStealthRadius = (int)($me['stealth_radius'] ?? 0);
 $hasCoords = ($myLat != 0 && $myLng != 0);
 
 // If NOT global discovery, we MUST have coords. If missing, return empty.
@@ -126,6 +127,7 @@ $sql = "
       AND mt.user1_id   IS NULL
       AND (sw.action IS NULL OR sw.action = 'dislike')
       AND ($distSql) >= u.stealth_radius
+      AND ($distSql) >= $myStealthRadius
       $boundsCondition
       $globalCondition
     ORDER BY " . ($isGlobal ? "u.last_active DESC" : "distance_km ASC") . "
