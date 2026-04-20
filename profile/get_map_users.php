@@ -66,7 +66,8 @@ $userIds = [];
 while ($row = $result->fetch_assoc()) {
     $row['id'] = (int)$row['id'];
     $row['distance_km'] = round((float)$row['distance_km'], 2);
-    $row['is_match'] = (bool)$row['is_match'];
+    $row['is_match'] = isset($row['is_match']) && (int)$row['is_match'] === 1;
+    $row['viewed_before'] = isset($row['viewed_before']) && (int)$row['viewed_before'] === 1;
     $users[] = $row;
     $userIds[] = $row['id'];
 }

@@ -17,12 +17,13 @@ if (!$viewedId || $viewedId === $userId) {
 }
 
 $db = getDB();
+error_log("ViewProfile: User $userId viewing $viewedId");
 
 // 1. Check if they are matched (Matches view for free)
 $matchCheck = $db->prepare("
     SELECT id FROM matches 
-    WHERE (user_one_id = ? AND user_two_id = ?) 
-       OR (user_one_id = ? AND user_two_id = ?)
+    WHERE (user1_id = ? AND user2_id = ?) 
+       OR (user1_id = ? AND user2_id = ?)
     LIMIT 1
 ");
 $matchCheck->bind_param('iiii', $userId, $viewedId, $viewedId, $userId);
