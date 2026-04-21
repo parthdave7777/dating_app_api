@@ -4,7 +4,7 @@ $userId = getAuthUserId();
 $db = getDB();
 header('Content-Type: application/json');
 
-$meStmt = $db->prepare("SELECT latitude, longitude, discovery_max_dist, stealth_radius FROM users WHERE id = ?");
+$meStmt = $db->prepare("SELECT latitude, longitude, gender, discovery_max_dist, stealth_radius FROM users WHERE id = ?");
 $meStmt->bind_param('i', $userId);
 $meStmt->execute();
 $me = $meStmt->get_result()->fetch_assoc();
@@ -24,6 +24,15 @@ if (!$hasCoords) {
     echo json_encode(['status' => 'success', 'users' => [], 'message' => 'Your location is missing']);
     exit();
 }
+
+// Gender filtering logic
+$myGender = strtolower($me['gender'] ?? '');
+if (in_array($myGender, ['male', 'man', 'm']))        $myGenderNormalized = 'man';
+elseif (in_array($myGender, ['female', 'woman', 'f'])) $myGenderNormalized = 'woman';
+else                                                   $myGenderNormalized = 'other';
+
+$targetGender    = ($myGenderNormalized === 'woman') ? 'man' : 'woman';
+$targetGenderEsc = $db->real_escape_string($targetGender);
 
 // Map specific SQL: Includes matches, higher limit (150)
 $distSql = "6371 * acos(
@@ -50,6 +59,10 @@ $sql = "
       AND COALESCE(u.show_on_map, 1) = 1
       AND bl.blocker_id IS NULL
       AND u.latitude != 0 AND u.longitude != 0
+      AND (
+            (LOWER(u.gender) IN ('man','male','m')       AND '$targetGenderEsc' = 'man')
+          OR (LOWER(u.gender) IN ('woman','female','w')   AND '$targetGenderEsc' = 'woman')
+      )
       AND ($distSql) >= COALESCE(u.stealth_radius, 0)
     ORDER BY distance_km ASC
     LIMIT $limit
