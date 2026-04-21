@@ -22,9 +22,14 @@ if (!$matchId || empty($message)) {
 // 2. Database Connection
 $db = getDB();
 
-// 3. User & Match Verification
-$authStmt = $db->prepare("SELECT user1_id, user2_id FROM matches WHERE id = ? AND (user1_id = ? OR user2_id = ?)");
-$authStmt->bind_param('iii', $matchId, $userId, $userId);
+// 3. User & Match Verification + Fetch My Name for response
+$authStmt = $db->prepare("
+    SELECT m.user1_id, m.user2_id, u.full_name as me_name 
+    FROM matches m 
+    JOIN users u ON u.id = ? 
+    WHERE m.id = ? AND (m.user1_id = ? OR m.user2_id = ?)
+");
+$authStmt->bind_param('iiii', $userId, $matchId, $userId, $userId);
 $authStmt->execute();
 $matchRow = $authStmt->get_result()->fetch_assoc();
 $authStmt->close();
@@ -36,6 +41,8 @@ if (!$matchRow) {
     exit();
 }
 
+$now = date('Y-m-d H:i:s');
+
 // 4. Message Insertion
 $stmt = $db->prepare("INSERT INTO messages (match_id, sender_id, message, type) VALUES (?, ?, ?, ?)");
 $stmt->bind_param('iiss', $matchId, $userId, $message, $type);
@@ -43,29 +50,18 @@ $stmt->execute();
 $msgId = $db->insert_id;
 $stmt->close();
 
-// 5. Fetch Full Message for Response
-$msgStmt = $db->prepare("
-    SELECT m.*, u.full_name AS sender_name,
-           (SELECT photo_url FROM user_photos WHERE user_id = m.sender_id AND is_dp = 1 LIMIT 1) AS sender_photo
-    FROM messages m JOIN users u ON u.id = m.sender_id
-    WHERE m.id = ?
-");
-$msgStmt->bind_param('i', $msgId);
-$msgStmt->execute();
-$msgRow = $msgStmt->get_result()->fetch_assoc();
-$msgStmt->close();
-
+// 5. Construct response object manually (Save 1 DB Query)
 $sharedMessage = [
-    'id'          => (int)  $msgRow['id'],
-    'sender_id'   => (int)  $msgRow['sender_id'],
-    'sender_name' =>        $msgRow['sender_name'],
-    'message'     =>        $msgRow['message'],
-    'type'        =>        $msgRow['type'],
+    'id'          => (int)  $msgId,
+    'sender_id'   => (int)  $userId,
+    'sender_name' =>        $matchRow['me_name'],
+    'message'     =>        $message,
+    'type'        =>        $type,
     'is_read'     => false,
     'is_saved'    => 0,
     'is_deleted'  => false,
     'is_edited'   => false,
-    'created_at'  =>        $msgRow['created_at'],
+    'created_at'  =>        $now,
 ];
 
 // 6. Non-critical Background Dispatch (NITRO Queue)

@@ -4,16 +4,12 @@ require_once __DIR__ . '/../config.php';
 
 $userId = getAuthUserId();
 
-$db = getDB();
-autoSyncUserMeta($userId, $db);
-
 $redis = getRedis();
 $cacheKey = "user_chats_$userId";
 
 // 1. NITRO CACHE: Try to serve from Redis first (15s TTL)
 if ($redis) {
-    $cached = $redis->get($cacheKey);
-    if ($cached) {
+    if ($cached = $redis->get($cacheKey)) {
         header('Content-Type: application/json');
         echo $cached;
         exit();
@@ -23,7 +19,7 @@ if ($redis) {
 $db = getDB();
 autoSyncUserMeta($userId, $db);
 
-// Single optimised query using JOINs with index-optimized subqueries
+// Single optimised query using pre-aggregated JOINs
 $stmt = $db->prepare("
     SELECT 
         m.id AS match_id,
@@ -35,7 +31,7 @@ $stmt = $db->prepare("
         lm.is_deleted AS last_is_deleted,
         lm.created_at AS last_message_time,
         lc.started_at AS last_call_time,
-        (SELECT COUNT(*) FROM messages WHERE match_id = m.id AND sender_id != ? AND is_read = 0) AS unread_count
+        COALESCE(uc.count, 0) AS unread_count
     FROM matches m
     LEFT JOIN (
         SELECT msg.match_id, msg.message, msg.type, msg.sender_id, msg.is_deleted, msg.created_at
@@ -45,10 +41,11 @@ $stmt = $db->prepare("
         ) latest ON msg.id = latest.max_id
     ) lm ON lm.match_id = m.id
     LEFT JOIN (
-        SELECT match_id, MAX(started_at) AS started_at 
-        FROM call_logs 
-        GROUP BY match_id
+        SELECT match_id, MAX(started_at) AS started_at FROM call_logs GROUP BY match_id
     ) lc ON lc.match_id = m.id
+    LEFT JOIN (
+        SELECT match_id, COUNT(*) AS count FROM messages WHERE sender_id != ? AND is_read = 0 GROUP BY match_id
+    ) uc ON uc.match_id = m.id
     WHERE m.user1_id = ? OR m.user2_id = ?
     ORDER BY GREATEST(
         COALESCE(lm.created_at, m.created_at),

@@ -52,27 +52,34 @@ $limit = 150;
 
 $sql = "
     SELECT
-        u.id, u.full_name, u.age, u.gender, u.latitude, u.longitude,
-        u.is_verified, (u.last_active > DATE_SUB(NOW(), INTERVAL 15 MINUTE)) as is_online,
-        ($distSql) AS distance_km,
-        EXISTS(SELECT 1 FROM matches WHERE (user1_id = $userId AND user2_id = u.id) OR (user1_id = u.id AND user2_id = $userId)) as is_match,
-        EXISTS(SELECT 1 FROM profile_views WHERE viewer_id = $userId AND viewed_id = u.id) as viewed_before
-    FROM users u
-    LEFT JOIN blocks bl ON (bl.blocker_id = $userId AND bl.blocked_user_id = u.id)
-                        OR (bl.blocker_id = u.id   AND bl.blocked_user_id = $userId)
-    WHERE u.id != $userId
-      AND COALESCE(u.show_on_map, 1) = 1
-      AND bl.blocker_id IS NULL
-      AND u.latitude != 0 AND u.longitude != 0
-      AND (
-            (LOWER(u.gender) IN ('man','male','m')       AND '$targetGenderEsc' = 'man')
-          OR (LOWER(u.gender) IN ('woman','female','w')   AND '$targetGenderEsc' = 'woman')
-      )
-      AND ($distSql) >= COALESCE(u.stealth_radius, 0)
-      AND ($isGlobal ? "1=1" : "($distSql) <= $maxDist")
-      AND ($distSql) >= $minDist
-      AND (u.age >= $minAge AND u.age <= $maxAge)
-    ORDER BY distance_km ASC
+        d.*,
+        (m.id IS NOT NULL) AS is_match,
+        (pv.viewer_id IS NOT NULL) AS viewed_before
+    FROM (
+        SELECT
+            u.id, u.full_name, u.age, u.gender, u.latitude, u.longitude,
+            u.is_verified, u.stealth_radius,
+            (u.last_active > DATE_SUB(NOW(), INTERVAL 15 MINUTE)) as is_online,
+            ($distSql) AS distance_km
+        FROM users u
+        LEFT JOIN blocks bl ON (bl.blocker_id = $userId AND bl.blocked_user_id = u.id)
+                            OR (bl.blocker_id = u.id   AND bl.blocked_user_id = $userId)
+        WHERE u.id != $userId
+          AND COALESCE(u.show_on_map, 1) = 1
+          AND bl.blocker_id IS NULL
+          AND u.latitude != 0 AND u.longitude != 0
+          AND (
+                (LOWER(u.gender) IN ('man','male','m')       AND '$targetGenderEsc' = 'man')
+              OR (LOWER(u.gender) IN ('woman','female','w')   AND '$targetGenderEsc' = 'woman')
+          )
+    ) d
+    LEFT JOIN matches m ON (m.user1_id = $userId AND m.user2_id = d.id) OR (m.user1_id = d.id AND m.user2_id = $userId)
+    LEFT JOIN profile_views pv ON (pv.viewer_id = $userId AND pv.viewed_id = d.id)
+    WHERE d.distance_km >= COALESCE(d.stealth_radius, 0)
+      AND " . ($isGlobal ? "1=1" : "d.distance_km <= $maxDist") . "
+      AND d.distance_km >= $minDist
+      AND (d.age >= $minAge AND d.age <= $maxAge)
+    ORDER BY d.distance_km ASC
     LIMIT $limit
 ";
 

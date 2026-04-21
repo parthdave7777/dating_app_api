@@ -59,11 +59,7 @@ $page  = max(1, (int)($_GET['page'] ?? 1));
 $limit = 30;
 $offset = ($page - 1) * $limit;
 
-// 4. Delete disliked swipes older than 2 days (keep this logic, runs async-ish)
-$db->query("DELETE FROM swipes 
-            WHERE swiper_id = $userId 
-              AND action = 'dislike' 
-              AND created_at < DATE_SUB(NOW(), INTERVAL 2 DAY)");
+
 
 // 5. Gender Normalization
 $myGender = strtolower($me['gender'] ?? '');

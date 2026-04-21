@@ -45,54 +45,39 @@ if ($action === 'rewind') {
     exit();
 }
 
-// ─── CREDIT DEDUCTION ──────────────────────────────────────────
+// Anti-spam: check if user swiped more than 100 times in the last hour using Redis
+$redis = getRedis();
+if ($redis) {
+    $spamKey = "swipe_cnt_$userId";
+    $count = $redis->incr($spamKey);
+    if ($count == 1) $redis->expire($spamKey, 3600);
+    if ($count > 100) {
+        echo json_encode(['status' => 'error', 'message' => 'Take a break! You are swiping too fast.', 'error_code' => 'RATE_LIMITED']);
+        exit();
+    }
+} else {
+    // Fallback to DB check if Redis is offline
+    $spamCheck = $db->prepare("SELECT COUNT(*) AS cnt FROM swipes WHERE swiper_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)");
+    $spamCheck->bind_param('i', $userId);
+    $spamCheck->execute();
+    $spamRes = $spamCheck->get_result()->fetch_assoc();
+    $spamCheck->close();
+    if ($spamRes['cnt'] > 100) {
+        echo json_encode(['status' => 'error', 'message' => 'Rate limit reached.', 'error_code' => 'RATE_LIMITED']);
+        exit();
+    }
+}
+
+// ── CREDIT DEDUCTION ──────────────────────────────────────────
 $cost = 0;
 if ($action === 'like')       $cost = CREDIT_COST_LIKE;
 if ($action === 'superlike')  $cost = CREDIT_COST_SUPERLIKE;
 if ($action === 'compliment') $cost = CREDIT_COST_COMPLIMENT;
 
-if ($cost > 0) {
-    if (!deductCredits($db, $userId, $cost, "Discovery: " . ucfirst($action))) {
-        echo json_encode([
-            'status' => 'error', 
-            'message' => 'Insufficient credits. Wait for daily refresh or upgrade.', 
-            'error_code' => 'INSUFFICIENT_CREDITS'
-        ]);
-        exit();
-    }
-}
-
-// Anti-spam: check if user swiped more than 100 times in the last hour
-$spamCheck = $db->prepare(
-    "SELECT COUNT(*) AS cnt FROM swipes 
-     WHERE swiper_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)"
-);
-$spamCheck->bind_param('i', $userId);
-$spamCheck->execute();
-$spamRow = $spamCheck->get_result()->fetch_assoc();
-$spamCheck->close();
-
-if ((int)$spamRow['cnt'] >= 100) {
-    $db->close();
-    echo json_encode([
-        'status' => 'error',
-        'message' => 'Slow down! Take a break and come back soon.',
-        'error_code' => 'RATE_LIMITED'
-    ]);
-    exit();
-}
-
-
-// ── Credit Deduction Logic ───────────────────────────────
-$cost = 0;
-if ($action === 'like') $cost = CREDIT_COST_LIKE;
-if ($action === 'superlike') $cost = CREDIT_COST_SUPERLIKE;
-if ($action === 'compliment') $cost = CREDIT_COST_COMPLIMENT;
-
 $db->begin_transaction();
 try {
     if ($cost > 0) {
-        if (!deductCredits($db, $userId, $cost, ucfirst($action) . " on User ID: $swipedUserId")) {
+        if (!deductCredits($db, $userId, $cost, "Discovery: " . ucfirst($action) . " on User ID: $swipedUserId")) {
             throw new Exception("INSUFFICIENT_CREDITS");
         }
     }
@@ -111,7 +96,7 @@ try {
 } catch (Exception $e) {
     $db->rollback();
     if ($e->getMessage() === "INSUFFICIENT_CREDITS") {
-        echo json_encode(['status' => 'error', 'message' => 'Insufficient credits', 'error_code' => 'INSUFFICIENT_CREDITS']);
+        echo json_encode(['status' => 'error', 'message' => 'Insufficient credits. Wait for daily refresh or upgrade.', 'error_code' => 'INSUFFICIENT_CREDITS']);
     } else {
         echo json_encode(['status' => 'error', 'message' => 'Action failed: ' . $e->getMessage()]);
     }
