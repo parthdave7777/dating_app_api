@@ -26,6 +26,11 @@ try {
     $stmt->bind_param("iiii", $userId, $targetId, $targetId, $userId);
     $stmt->execute();
 
+    // 4. Remove all messages
+    $stmt = $db->prepare("DELETE FROM messages WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)");
+    $stmt->bind_param("iiii", $userId, $targetId, $targetId, $userId);
+    $stmt->execute();
+
     echo json_encode(['status' => 'success', 'message' => 'User blocked successfully']);
 } catch (Exception $e) {
     echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
