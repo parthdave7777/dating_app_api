@@ -17,18 +17,18 @@ try {
     $stmt->bind_param("ii", $userId, $targetId);
     $stmt->execute();
 
-    // 2. Remove any existing match between them
+    // 2. Remove all messages (MUST do this before deleting the match record)
+    $stmt = $db->prepare("DELETE FROM messages WHERE match_id IN (SELECT id FROM matches WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?))");
+    $stmt->bind_param("iiii", $userId, $targetId, $targetId, $userId);
+    $stmt->execute();
+
+    // 3. Remove any existing match between them
     $stmt = $db->prepare("DELETE FROM matches WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)");
     $stmt->bind_param("iiii", $userId, $targetId, $targetId, $userId);
     $stmt->execute();
 
-    // 3. Remove any likes/swipes
+    // 4. Remove any likes/swipes
     $stmt = $db->prepare("DELETE FROM swipes WHERE (swiper_id = ? AND swiped_id = ?) OR (swiper_id = ? AND swiped_id = ?)");
-    $stmt->bind_param("iiii", $userId, $targetId, $targetId, $userId);
-    $stmt->execute();
-
-    // 4. Remove all messages
-    $stmt = $db->prepare("DELETE FROM messages WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)");
     $stmt->bind_param("iiii", $userId, $targetId, $targetId, $userId);
     $stmt->execute();
 

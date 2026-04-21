@@ -21,17 +21,17 @@ if (!$targetId) {
 
 $db = getDB();
 
-// 1. Delete from matches
+// 1. Delete all messages (MUST do this before deleting the match record using subquery)
+$stmt2 = $db->prepare("DELETE FROM messages WHERE match_id IN (SELECT id FROM matches WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?))");
+$stmt2->bind_param('iiii', $userId, $targetId, $targetId, $userId);
+$stmt2->execute();
+$stmt2->close();
+
+// 2. Delete from matches
 $stmt1 = $db->prepare("DELETE FROM matches WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)");
 $stmt1->bind_param('iiii', $userId, $targetId, $targetId, $userId);
 $stmt1->execute();
 $stmt1->close();
-
-// 2. Delete all messages
-$stmt2 = $db->prepare("DELETE FROM messages WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)");
-$stmt2->bind_param('iiii', $userId, $targetId, $targetId, $userId);
-$stmt2->execute();
-$stmt2->close();
 
 // 3. Delete swipes (likes) to ensure they are fully disconnected
 $stmt3 = $db->prepare("DELETE FROM swipes WHERE (swiper_id = ? AND swiped_id = ?) OR (swiper_id = ? AND swiped_id = ?)");
@@ -49,3 +49,4 @@ echo json_encode([
 ]);
 
 $db->close();
+?>
