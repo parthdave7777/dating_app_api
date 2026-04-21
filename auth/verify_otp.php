@@ -13,9 +13,16 @@ try {
     $otp   = trim($body['otp'] ?? '');
 
     if (empty($phone) || empty($otp)) {
-        echo json_encode(['status' => 'error', 'message' => 'Phone and OTP are required']);
-        exit();
-    }
+    echo json_encode(['status' => 'error', 'message' => 'Phone and OTP are required']);
+    exit();
+}
+
+// Security: Prevent OTP brute forcing (10 attempts per 30 mins)
+if (!checkRateLimit("otp_verify:$phone", 10, 1800)) {
+    http_response_code(429);
+    echo json_encode(['status' => 'error', 'message' => 'Too many failed attempts. Try again in 30 minutes.', 'error_code' => 'RATE_LIMITED']);
+    exit();
+}
 
     $db = getDB();
     $verified = false;

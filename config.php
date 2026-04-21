@@ -15,6 +15,12 @@ header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS, DELETE, PUT");
 header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
 
+// --- CLOUD SECURITY HEADERS ---
+header("X-Content-Type-Options: nosniff");
+header("X-Frame-Options: SAMEORIGIN");
+header("X-XSS-Protection: 1; mode=block");
+header("Referrer-Policy: strict-origin-when-cross-origin");
+
 // Set local timezone for all PHP operations
 date_default_timezone_set('Asia/Kolkata');
 
@@ -172,6 +178,27 @@ function getRedis(): ?Redis {
         error_log("[REDIS] Connection Error: " . $e->getMessage());
     }
     return null;
+}
+
+/**
+ * GLOBAL RATE LIMITER (Redis-Backed)
+ * @param string $key Unique key for the action (e.g., 'login_1.2.3.4')
+ * @param int $limit Max attempts
+ * @param int $seconds Time window
+ * @return bool True if allowed, false if blocked
+ */
+function checkRateLimit(string $key, int $limit, int $seconds): bool {
+    $redis = getRedis();
+    if (!$redis) return true; // Fallback to allow if Redis is down (high availability)
+
+    $current = $redis->get("rl:$key");
+    if ($current !== false && (int)$current >= $limit) return false;
+
+    $redis->incr("rl:$key");
+    if ($current === false) {
+        $redis->expire("rl:$key", $seconds);
+    }
+    return true;
 }
 
 /**

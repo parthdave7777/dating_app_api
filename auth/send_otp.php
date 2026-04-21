@@ -20,6 +20,13 @@ if (!preg_match('/^\+\d{10,15}$/', $phone)) {
     exit();
 }
 
+// Security: Rate limit OTP requests to 5 per hour per phone
+if (!checkRateLimit("otp_send:$phone", 5, 3600)) {
+    http_response_code(429);
+    echo json_encode(['status' => 'error', 'message' => 'Too many OTP requests. Try again in an hour.', 'error_code' => 'RATE_LIMITED']);
+    exit();
+}
+
 $db = getDB();
 
 // ── DEV MODE: Static OTP — always 123456, never expires ─────
