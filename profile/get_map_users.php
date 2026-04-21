@@ -4,7 +4,7 @@ $userId = getAuthUserId();
 $db = getDB();
 header('Content-Type: application/json');
 
-$meStmt = $db->prepare("SELECT latitude, longitude, gender, discovery_max_dist, stealth_radius FROM users WHERE id = ?");
+$meStmt = $db->prepare("SELECT latitude, longitude, gender, discovery_min_dist, discovery_max_dist, stealth_radius FROM users WHERE id = ?");
 $meStmt->bind_param('i', $userId);
 $meStmt->execute();
 $me = $meStmt->get_result()->fetch_assoc();
@@ -18,6 +18,8 @@ if (!$me) {
 $myLat    = (float)($me['latitude'] ?? 0);
 $myLng    = (float)($me['longitude'] ?? 0);
 $myStealthRadius = (int)($me['stealth_radius'] ?? 0);
+$minDist   = (int)($me['discovery_min_dist'] ?? 0);
+$maxDist   = (int)($me['discovery_max_dist'] ?? 50);
 $hasCoords = ($myLat != 0 && $myLng != 0);
 
 if (!$hasCoords) {
@@ -64,6 +66,7 @@ $sql = "
           OR (LOWER(u.gender) IN ('woman','female','w')   AND '$targetGenderEsc' = 'woman')
       )
       AND ($distSql) >= COALESCE(u.stealth_radius, 0)
+      AND ($distSql) BETWEEN $minDist AND $maxDist
     ORDER BY distance_km ASC
     LIMIT $limit
 ";
