@@ -11,7 +11,8 @@ if (!$userId) {
     exit();
 }
 
-$targetId = isset($_POST['target_id']) ? (int)$_POST['target_id'] : 0;
+$data = json_decode(file_get_contents('php://input'), true);
+$targetId = (int)($data['target_id'] ?? 0);
 
 if (!$targetId) {
     echo json_encode(['status' => 'error', 'message' => 'Target user ID required']);

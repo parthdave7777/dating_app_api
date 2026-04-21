@@ -2,9 +2,10 @@
 require_once '../config.php';
 
 $userId = getAuthUserId();
-$targetId = (int)($_POST['target_id'] ?? 0);
-$reason = $_POST['reason'] ?? 'Other';
-$description = $_POST['description'] ?? '';
+$data = json_decode(file_get_contents('php://input'), true);
+$targetId = (int)($data['target_id'] ?? 0);
+$reason = $data['reason'] ?? 'Other';
+$description = $data['description'] ?? '';
 
 if (!$targetId) {
     die(json_encode(['status' => 'error', 'message' => 'Target ID is required']));
