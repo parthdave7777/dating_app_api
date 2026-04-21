@@ -51,7 +51,6 @@ $sql = "
       AND bl.blocker_id IS NULL
       AND u.latitude != 0 AND u.longitude != 0
       AND ($distSql) >= COALESCE(u.stealth_radius, 0)
-      AND ($distSql) >= $myStealthRadius
     ORDER BY distance_km ASC
     LIMIT $limit
 ";
