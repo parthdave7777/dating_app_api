@@ -14,11 +14,13 @@ $stmt = $db->prepare("
            (SELECT COUNT(*) FROM matches WHERE (user1_id = ? AND user2_id = u.id) OR (user1_id = u.id AND user2_id = ?)) as is_match
     FROM profile_views pv
     JOIN users u ON u.id = pv.viewer_id
-    WHERE pv.viewed_id = ?
+    LEFT JOIN blocks bl ON (bl.blocker_id = ? AND bl.blocked_user_id = u.id)
+                        OR (bl.blocker_id = u.id   AND bl.blocked_user_id = ?)
+    WHERE pv.viewed_id = ? AND bl.blocker_id IS NULL
     ORDER BY pv.viewed_at DESC
     LIMIT 50
 ");
-$stmt->bind_param('iiii', $userId, $userId, $userId, $userId);
+$stmt->bind_param('iiiiii', $userId, $userId, $userId, $userId, $userId, $userId);
 $stmt->execute();
 $result = $stmt->get_result();
 $stmt->close();

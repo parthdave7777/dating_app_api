@@ -26,6 +26,18 @@ if (isset($_GET['target_id']) && (int)$_GET['target_id'] !== $userId) {
         require_once __DIR__ . '/../notifications/send_push.php';
         sendProfileViewNotification($db, $userId, $targetId);
     }
+
+    // 2. Block Check
+    $blockStmt = $db->prepare("SELECT 1 FROM blocks WHERE (blocker_id = ? AND blocked_user_id = ?) OR (blocker_id = ? AND blocked_user_id = ?)");
+    $blockStmt->bind_param('iiii', $userId, $targetId, $targetId, $userId);
+    $blockStmt->execute();
+    if ($blockStmt->get_result()->num_rows > 0) {
+        $blockStmt->close();
+        http_response_code(403);
+        echo json_encode(['status' => 'error', 'message' => 'Profile is unavailable']);
+        exit();
+    }
+    $blockStmt->close();
 } else {
     $targetId = $userId;
 }
