@@ -25,12 +25,10 @@ function handleTaskDirectly(array $payload) {
 
         // 2. Send Push Notification
         $msgPreview = ($msgType === 'image') ? '📷 Photo' : $message;
-        $db = getDB();
-        sendPush($db, $recipientId, 'message', $senderName, $msgPreview, [
+        sendPush(getDB(), $recipientId, 'message', $senderName, $msgPreview, [
             'match_id'  => (string)$matchId,
             'sender_id' => (string)$senderId,
         ]);
-        $db->close();
 
         // 3. Clear Cache
         $redis = getRedis();
@@ -46,9 +44,7 @@ function handleTaskDirectly(array $payload) {
         ]);
     } 
     else if ($type === 'incoming_call') {
-        $db = getDB();
-        sendPush($db, $payload['recipient_id'], 'incoming_call', $payload['title'], $payload['body'], $payload['data']);
-        $db->close();
+        sendPush(getDB(), $payload['recipient_id'], 'incoming_call', $payload['title'], $payload['body'], $payload['data']);
     } 
     else if ($type === 'message_edited') {
         broadcastToSoketi("match_" . $payload['match_id'], "message_edited", [

@@ -96,6 +96,13 @@ if (APP_ENV === 'local') {
 }
 
 function getDB(): mysqli {
+    static $conn = null;
+    if ($conn !== null) {
+        try {
+            if (mysqli_ping($conn)) return $conn;
+        } catch (Exception $e) { $conn = null; }
+    }
+
     try {
         mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
         $conn = mysqli_init();
@@ -103,32 +110,25 @@ function getDB(): mysqli {
 
         if (USE_SSL) {
             mysqli_options($conn, MYSQLI_OPT_SSL_VERIFY_SERVER_CERT, false);
-        // OPTIMIZATION: Only use SSL for public/external database connections.
-        // Internal railway connections (.internal or localhost) are safe and much faster without SSL.
-        $isInternal = (strpos(DB_HOST, '.internal') !== false || DB_HOST === 'localhost' || DB_HOST === '127.0.0.1');
-        $flags = $isInternal ? 0 : MYSQLI_CLIENT_SSL;
-        
-        try {
-            $success = mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT, NULL, $flags);
-            if (!$success) {
-                // Fallback attempt without SSL if SSL failed
-                $success = mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT, NULL, 0);
+            $isInternal = (strpos(DB_HOST, '.internal') !== false || DB_HOST === 'localhost' || DB_HOST === '127.0.0.1');
+            $flags = $isInternal ? 0 : MYSQLI_CLIENT_SSL;
+            
+            try {
+                $success = mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT, NULL, $flags);
+                if (!$success) $success = mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT, NULL, 0);
+            } catch (Exception $e) {
+                @mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT, NULL, 0);
             }
-        } catch (Exception $e) {
-            // Final fallback
-            @mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT, NULL, 0);
-        }
         } else {
-            $success = mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT);
+            mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT);
         }
 
-        if (!$success) throw new Exception("Connection failed: " . mysqli_connect_error());
         $conn->set_charset('utf8mb4');
-        @$conn->query("SET time_zone = '+05:30'"); // Silent fallback if host blocks this
+        @$conn->query("SET time_zone = '+05:30'");
         return $conn;
     } catch (Exception $e) {
         http_response_code(500);
-        die(json_encode(['status' => 'error', 'message' => 'Database Error: ' . $e->getMessage()]));
+        die(json_encode(['status' => 'error', 'message' => 'Database Error']));
     }
 }
 
