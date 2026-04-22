@@ -19,20 +19,8 @@ if ($redis) {
 $db = getDB();
 autoSyncUserMeta($userId, $db);
 
-// 1. Fetch match IDs first (very fast)
-$matchRes = $db->query("SELECT id FROM matches WHERE user1_id = $userId OR user2_id = $userId");
-$matchIds = [];
-while ($mRow = $matchRes->fetch_assoc()) $matchIds[] = (int)$mRow['id'];
-
-if (empty($matchIds)) {
-    echo json_encode(['status' => 'success', 'chats' => []]);
-    $db->close();
-    exit;
-}
-$matchList = implode(',', $matchIds);
-
-// 2. Optimized query using targeted subqueries
-$sql = "
+// Single optimised query using pre-aggregated JOINs
+$stmt = $db->prepare("
     SELECT 
         m.id AS match_id,
         m.created_at AS match_created,
@@ -43,27 +31,28 @@ $sql = "
         lm.is_deleted AS last_is_deleted,
         lm.created_at AS last_message_time,
         lc.started_at AS last_call_time,
-        (SELECT COUNT(*) FROM messages WHERE match_id = m.id AND sender_id != ? AND is_read = 0) AS unread_count
+        COALESCE(uc.count, 0) AS unread_count
     FROM matches m
     LEFT JOIN (
         SELECT msg.match_id, msg.message, msg.type, msg.sender_id, msg.is_deleted, msg.created_at
         FROM messages msg
-        WHERE msg.id IN (
-            SELECT MAX(id) FROM messages WHERE match_id IN ($matchList) GROUP BY match_id
-        )
+        INNER JOIN (
+            SELECT match_id, MAX(id) AS max_id FROM messages GROUP BY match_id
+        ) latest ON msg.id = latest.max_id
     ) lm ON lm.match_id = m.id
     LEFT JOIN (
-        SELECT match_id, MAX(started_at) AS started_at FROM call_logs WHERE match_id IN ($matchList) GROUP BY match_id
+        SELECT match_id, MAX(started_at) AS started_at FROM call_logs GROUP BY match_id
     ) lc ON lc.match_id = m.id
-    WHERE m.id IN ($matchList)
+    LEFT JOIN (
+        SELECT match_id, COUNT(*) AS count FROM messages WHERE sender_id != ? AND is_read = 0 GROUP BY match_id
+    ) uc ON uc.match_id = m.id
+    WHERE m.user1_id = ? OR m.user2_id = ?
     ORDER BY GREATEST(
         COALESCE(lm.created_at, m.created_at),
         COALESCE(lc.started_at, m.created_at)
     ) DESC
-";
-
-$stmt = $db->prepare($sql);
-$stmt->bind_param('ii', $userId, $userId);
+");
+$stmt->bind_param('iiii', $userId, $userId, $userId, $userId);
 $stmt->execute();
 $result = $stmt->get_result();
 $stmt->close();

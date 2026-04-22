@@ -34,8 +34,15 @@ if ($type === 'new_message') {
     $msgType     = $payload['message_type'];
     $msgRow      = $payload['message_row'];
 
-    // 1. Send Push Notification (Background) - DO THIS FIRST for speed
+    // 1. Broadcast to Soketi (Background)
+    $res = broadcastToSoketi("match_$matchId", "new_message", [
+        'message' => $msgRow
+    ]);
+    workerLog("Soketi Broadcast " . ($res ? "SUCCESS" : "FAILED") . " for match $matchId");
+
+    // 2. Send Push Notification (Background)
     $msgPreview = ($msgType === 'image') ? '📷 Photo' : $message;
+    
     $db = getDB();
     $pushRes = sendPush($db, $recipientId, 'message', $senderName, $msgPreview, [
         'match_id'  => (string)$matchId,
@@ -43,12 +50,6 @@ if ($type === 'new_message') {
     ]);
     workerLog("FCM Push " . ($pushRes ? "SENT" : "FAILED") . " to user $recipientId");
     $db->close();
-
-    // 2. Broadcast to Soketi (Background) - This can be slightly delayed
-    $res = broadcastToSoketi("match_$matchId", "new_message", [
-        'message' => $msgRow
-    ]);
-    workerLog("Soketi Broadcast " . ($res ? "SUCCESS" : "FAILED") . " for match $matchId");
 }
 else if ($type === 'messages_read') {
     $matchId  = $payload['match_id'];
@@ -82,26 +83,4 @@ else if ($type === 'message_edited') {
         'match_id'   => $matchId
     ]);
     workerLog("Edit Broadcast " . ($res ? "SUCCESS" : "FAILED") . " for match $matchId");
-}
-else if ($type === 'social_push') {
-    $subType  = $payload['sub_type'];
-    $toUserId = (int)$payload['recipient_id'];
-    $fromId   = (int)$payload['sender_id'];
-    $message  = $payload['message'] ?? '';
-    $matchId  = $payload['match_id'] ?? 0;
-
-    $db = getDB();
-    if ($subType === 'match') {
-        sendMatchNotification($db, $fromId, $toUserId, (int)$matchId);
-    } elseif ($subType === 'like') {
-        sendLikeNotification($db, $fromId, $toUserId);
-    } elseif ($subType === 'superlike') {
-        sendSuperLikeNotification($db, $fromId, $toUserId);
-    } elseif ($subType === 'compliment') {
-        sendComplimentNotification($db, $fromId, $toUserId, $message);
-    } elseif ($subType === 'profile_view') {
-        sendProfileViewNotification($db, $fromId, $toUserId);
-    }
-    workerLog("Social Push ($subType) handled for user $toUserId");
-    $db->close();
 }

@@ -172,30 +172,16 @@ if ($action === 'like' || $action === 'superlike') {
 
         $isMatch = true;
         
-        dispatchAsync([
-            'action_type'  => 'social_push',
-            'sub_type'     => 'match',
-            'recipient_id' => $swipedUserId,
-            'sender_id'    => $userId,
-            'match_id'     => (int)$matchId
-        ]);
+        require_once __DIR__ . '/../notifications/send_push.php';
+        sendMatchNotification($db, $userId, $swipedUserId, (int)$matchId);
 
     } else {
         // Not a match (yet), just a regular like/superlike
+        require_once __DIR__ . '/../notifications/send_push.php';
         if ($action === 'superlike') {
-            dispatchAsync([
-                'action_type'  => 'social_push',
-                'sub_type'     => 'superlike',
-                'recipient_id' => $swipedUserId,
-                'sender_id'    => $userId
-            ]);
+            sendSuperLikeNotification($db, $userId, $swipedUserId);
         } else {
-            dispatchAsync([
-                'action_type'  => 'social_push',
-                'sub_type'     => 'like',
-                'recipient_id' => $swipedUserId,
-                'sender_id'    => $userId
-            ]);
+            sendLikeNotification($db, $userId, $swipedUserId);
         }
     }
 }

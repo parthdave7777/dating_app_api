@@ -207,40 +207,28 @@ function sendPush(
 
     // Filter by type - only block if specifically set to 0
     if ($type === 'message' && isset($row['notif_messages']) && (int)$row['notif_messages'] === 0) {
-        $suppMsg = "[FCM] Suppression: User $toUserId has disabled message notifications";
-        error_log($suppMsg);
-        @file_put_contents(__DIR__ . '/../worker_debug.txt', "[" . date('Y-m-d H:i:s') . "] $suppMsg\n", FILE_APPEND);
+        error_log("[FCM] Suppression: User $toUserId has disabled message notifications");
         return false;
     }
     if ($type === 'match' && isset($row['notif_matches']) && (int)$row['notif_matches'] === 0) {
-        $suppMsg = "[FCM] Suppression: User $toUserId has disabled match notifications";
-        error_log($suppMsg);
-        @file_put_contents(__DIR__ . '/../worker_debug.txt', "[" . date('Y-m-d H:i:s') . "] $suppMsg\n", FILE_APPEND);
+        error_log("[FCM] Suppression: User $toUserId has disabled match notifications");
         return false;
     }
     if (in_array($type, ['like', 'superlike']) && isset($row['notif_likes']) && (int)$row['notif_likes'] === 0) {
-        $suppMsg = "[FCM] Suppression: User $toUserId has disabled like/superlike notifications";
-        error_log($suppMsg);
-        @file_put_contents(__DIR__ . '/../worker_debug.txt', "[" . date('Y-m-d H:i:s') . "] $suppMsg\n", FILE_APPEND);
+        error_log("[FCM] Suppression: User $toUserId has disabled like/superlike notifications");
         return false;
     }
     if ($type === 'profile_view' && isset($row['notif_who_swiped']) && (int)$row['notif_who_swiped'] === 0) {
-        $suppMsg = "[FCM] Suppression: User $toUserId has disabled profile view notifications";
-        error_log($suppMsg);
-        @file_put_contents(__DIR__ . '/../worker_debug.txt', "[" . date('Y-m-d H:i:s') . "] $suppMsg\n", FILE_APPEND);
+        error_log("[FCM] Suppression: User $toUserId has disabled profile view notifications");
         return false;
     }
     if ($type === 'compliment' && isset($row['notif_activity']) && (int)$row['notif_activity'] === 0) {
-        $suppMsg = "[FCM] Suppression: User $toUserId has disabled compliment/activity notifications";
-        error_log($suppMsg);
-        @file_put_contents(__DIR__ . '/../worker_debug.txt', "[" . date('Y-m-d H:i:s') . "] $suppMsg\n", FILE_APPEND);
+        error_log("[FCM] Suppression: User $toUserId has disabled compliment/activity notifications");
         return false;
     }
 
     if (empty($row['fcm_token'])) {
-        $errMsg = "[FCM] No FCM token for user $toUserId. (Logged out or denied perms)";
-        error_log($errMsg);
-        @file_put_contents(__DIR__ . '/../worker_debug.txt', "[" . date('Y-m-d H:i:s') . "] $errMsg\n", FILE_APPEND);
+        error_log("[FCM] No FCM token for user $toUserId. They might be logged out or haven't granted permission.");
         return false;
     }
 
@@ -254,12 +242,14 @@ function sendPush(
     }
 
     // ── All data values must be strings for FCM data messages ─
-    $displayBody = !empty($body) ? $body : 'Sent you a message';
-    $displayTitle = !empty($title) ? $title : 'New Message';
+    $displayBody = $body;
+    if ($type === 'message') {
+        $displayBody = 'Sent you a message';
+    }
 
     $stringData = array_map('strval', array_merge($data, [
         'type'    => $type,
-        'title'   => $displayTitle,
+        'title'   => $title,
         'body'    => $displayBody,
         'sent_at' => (string)microtime(true), // Diagnostic timestamp
     ]));
@@ -311,8 +301,26 @@ function sendPush(
 
     $url = 'https://fcm.googleapis.com/v1/projects/' . $projectId . '/messages:send';
 
-    // blocking curl (Safe inside async background worker)
-        // Option B — blocking curl 
+    // SPEED OPT 6: Fire FCM push asynchronously so swipe.php responds instantly.
+    // BUG FIX: On Windows XAMPP, exec() with Linux shell syntax (> /dev/null) fails.
+    // Force Option B (standard curl) for Windows local development to ensure reliability.
+    $isWindows = strncasecmp(PHP_OS, 'WIN', 3) === 0;
+    $disabledFunctions = array_map('trim', explode(',', ini_get('disable_functions')));
+    $execAvailable = !$isWindows && function_exists('exec') && !in_array('exec', $disabledFunctions);
+    
+    if ($execAvailable) {
+        // Option A — async fire-and-forget
+        $payload = json_encode($message);
+        $cmd = "curl -s -X POST " . escapeshellarg($url)
+             . " -H " . escapeshellarg('Authorization: Bearer ' . $accessToken)
+             . " -H 'Content-Type: application/json'"
+             . " -d " . escapeshellarg($payload)
+             . " > /dev/null 2>&1 &";
+        exec($cmd);
+        error_log("[FCM] Push dispatched async to user $toUserId type=$type");
+        $success = true;
+    } else {
+        // Option B — blocking curl with fast 3s timeout
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_POST           => true,
@@ -322,9 +330,7 @@ function sendPush(
             ],
             CURLOPT_POSTFIELDS     => json_encode($message),
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 2,  // Hard cap at 2s 
-            CURLOPT_IPRESOLVE      => CURL_IPRESOLVE_V4, // Faster DNS on many hosts
-            CURLOPT_TCP_NODELAY    => 1, // Minimize latency
+            CURLOPT_TIMEOUT        => 3,  // Reduced from 8s
         ]);
 
         $startSend = microtime(true);
