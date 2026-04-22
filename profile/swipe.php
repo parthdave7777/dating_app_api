@@ -73,6 +73,7 @@ $cost = 0;
 if ($action === 'like')       $cost = CREDIT_COST_LIKE;
 if ($action === 'superlike')  $cost = CREDIT_COST_SUPERLIKE;
 if ($action === 'compliment') $cost = CREDIT_COST_COMPLIMENT;
+if ($action === 'rewind')     $cost = CREDIT_COST_REWIND;
 
 $db->begin_transaction();
 try {

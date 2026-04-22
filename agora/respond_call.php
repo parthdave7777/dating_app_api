@@ -90,6 +90,9 @@ $calleeToken = RtcTokenBuilder2::buildTokenWithUid(
     TOKEN_EXPIRY
 );
 
+// ── Charge Initiator for the first minute ────────────────────
+deductCredits($db, $callerId, CREDIT_COST_CALL_MIN, "Video Call Initial Minute: Match $matchId");
+
 sendPush(
     $db,
     $callerId,

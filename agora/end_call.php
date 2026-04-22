@@ -140,6 +140,7 @@ if ($finalStatus === 'missed') {
     );
 }
 
+
 $db->close();
 
 echo json_encode([

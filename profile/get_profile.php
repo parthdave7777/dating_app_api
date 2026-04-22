@@ -15,9 +15,19 @@ if (isset($_GET['target_id']) && (int)$_GET['target_id'] !== $userId) {
     $viewRes = $viewCheck->get_result()->fetch_assoc();
     $viewCheck->close();
 
+    $isNewView = (!$viewRes);
     $shouldNotify = true;
     if ($viewRes && (time() - strtotime($viewRes['viewed_at']) < (6 * 3600))) {
         $shouldNotify = false;
+    }
+
+    // ── Credit Deduction for Map/Discovery View ────────────────
+    if ($isNewView) {
+        if (!deductCredits($db, $userId, CREDIT_COST_PROFILE_VIEW, "First View: User ID $targetId")) {
+            http_response_code(402);
+            echo json_encode(['status' => 'error', 'message' => 'INSUFFICIENT_CREDITS', 'required' => CREDIT_COST_PROFILE_VIEW]);
+            exit();
+        }
     }
 
     $db->query("INSERT INTO profile_views (viewer_id, viewed_id) VALUES ($userId, $targetId) ON DUPLICATE KEY UPDATE viewed_at = NOW()");

@@ -44,6 +44,13 @@ if (!$match) {
     exit();
 }
 
+// ── Check Credits ─────────────────────────────────────────────
+if (getUserCredits($db, $callerId) < CREDIT_COST_CALL_MIN) {
+    http_response_code(402);
+    echo json_encode(['status' => 'error', 'message' => 'INSUFFICIENT_CREDITS', 'required' => CREDIT_COST_CALL_MIN]);
+    exit();
+}
+
 $calleeId    = ($match['user1_id'] == $callerId) ? $match['user2_id'] : $match['user1_id'];
 $channelName = 'match_' . $matchId;
 
