@@ -343,19 +343,18 @@ register_shutdown_function(function() {
         fastcgi_finish_request();
     }
 
-    $logFile = __DIR__ . '/debug_tasks.log';
-    file_put_contents($logFile, date('[Y-m-d H:i:s] ') . "Starting " . count($GLOBAL_ASYNC_TASKS) . " tasks\n", FILE_APPEND);
+    error_log("[DEBUG_ASYNC] Starting " . count($GLOBAL_ASYNC_TASKS) . " tasks");
 
     try {
         require_once __DIR__ . '/notifications/task_handler.php';
         foreach ($GLOBAL_ASYNC_TASKS as $task) {
             $type = $task['action_type'] ?? 'unknown';
-            file_put_contents($logFile, " - Processing: $type\n", FILE_APPEND);
+            error_log("[DEBUG_ASYNC] Processing: $type");
             handleTaskDirectly($task);
-            file_put_contents($logFile, " - Success: $type\n", FILE_APPEND);
+            error_log("[DEBUG_ASYNC] Success: $type");
         }
     } catch (Throwable $e) {
-        file_put_contents($logFile, " FATAL ERROR: " . $e->getMessage() . " in " . $e->getFile() . " on line " . $e->getLine() . "\n", FILE_APPEND);
+        error_log("[DEBUG_ASYNC] FATAL ERROR: " . $e->getMessage() . " in " . $e->getFile() . " on line " . $e->getLine());
     }
 });
 
