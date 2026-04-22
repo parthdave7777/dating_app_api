@@ -338,19 +338,24 @@ register_shutdown_function(function() {
     global $GLOBAL_ASYNC_TASKS;
     if (empty($GLOBAL_ASYNC_TASKS)) return;
 
-    // Send response to user if possible
+    // Send response to user
     if (function_exists('fastcgi_finish_request')) {
         fastcgi_finish_request();
     }
 
-    // Process tasks using absolute paths
-    require_once __DIR__ . '/notifications/task_handler.php';
-    foreach ($GLOBAL_ASYNC_TASKS as $task) {
-        try {
+    $logFile = __DIR__ . '/debug_tasks.log';
+    file_put_contents($logFile, date('[Y-m-d H:i:s] ') . "Starting " . count($GLOBAL_ASYNC_TASKS) . " tasks\n", FILE_APPEND);
+
+    try {
+        require_once __DIR__ . '/notifications/task_handler.php';
+        foreach ($GLOBAL_ASYNC_TASKS as $task) {
+            $type = $task['action_type'] ?? 'unknown';
+            file_put_contents($logFile, " - Processing: $type\n", FILE_APPEND);
             handleTaskDirectly($task);
-        } catch (Exception $e) {
-            error_log("[ASYNC ERROR] " . $e->getMessage());
+            file_put_contents($logFile, " - Success: $type\n", FILE_APPEND);
         }
+    } catch (Throwable $e) {
+        file_put_contents($logFile, " FATAL ERROR: " . $e->getMessage() . " in " . $e->getFile() . " on line " . $e->getLine() . "\n", FILE_APPEND);
     }
 });
 
