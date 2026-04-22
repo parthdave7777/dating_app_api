@@ -11,7 +11,7 @@ $userId = getAuthUserId();
 $body   = json_decode(file_get_contents('php://input'), true);
 
 $swipedUserId = (int)   ($body['swiped_user_id'] ?? 0);
-$action       = trim($body['action'] ?? ''); 
+$action       = strtolower(trim($body['action'] ?? '')); 
 
 if (!$swipedUserId || !in_array($action, ['like', 'dislike', 'superlike', 'compliment', 'rewind'])) {
     echo json_encode(['status' => 'error', 'message' => 'swiped_user_id and valid action required']);
