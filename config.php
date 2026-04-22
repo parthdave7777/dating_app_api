@@ -305,31 +305,23 @@ function generateToken(int $userId): string {
  * to a Redis-backed queue. This prevents spawning PHP processes per-request.
  */
 function dispatchAsync(array $payload): void {
-    $redis = getRedis();
-    if ($redis) {
-        // Option 1: Fast Redis Push
-        $redis->lPush('task_queue', json_encode($payload));
-    } else {
-        // Option 2: Fallback to direct background process
-        $jsonPayload = escapeshellarg(json_encode($payload));
-        $workerPath  = __DIR__ . "/notifications/async_worker.php";
-        
-        $isWindows = strncasecmp(PHP_OS, 'WIN', 3) === 0;
-        if ($isWindows) {
-            // Robust Windows PHP detection
-            $phpPath = 'php';
-            if (!`where $phpPath 2>nul`) {
-                if (file_exists('C:\xampp\php\php.exe')) {
-                    $phpPath = 'C:\xampp\php\php.exe';
-                }
-            }
-            // Windows XAMPP fallback (using start /B for async)
-            $cmd = "$phpPath " . escapeshellarg($workerPath) . " " . $jsonPayload;
-            pclose(popen("start /B $cmd", "r"));
-        } else {
-            // Linux Production fallback (async fork)
-            exec("nohup php " . escapeshellarg($workerPath) . " " . $jsonPayload . " > /dev/null 2>&1 &");
+    // NITRO: We are using DIRECT backgrounding instead of a Redis Queue 
+    // to keep your Railway setup simple (single service).
+    
+    $jsonPayload = escapeshellarg(json_encode($payload));
+    $workerPath  = __DIR__ . "/notifications/async_worker.php";
+    
+    $isWindows = strncasecmp(PHP_OS, 'WIN', 3) === 0;
+    if ($isWindows) {
+        $phpPath = 'php';
+        if (!`where $phpPath 2>nul`) {
+            if (file_exists('C:\xampp\php\php.exe')) $phpPath = 'C:\xampp\php\php.exe';
         }
+        $cmd = "$phpPath " . escapeshellarg($workerPath) . " " . $jsonPayload;
+        pclose(popen("start /B $cmd", "r"));
+    } else {
+        // Linux Production (Railway) - Direct Fire-and-Forget
+        exec("nohup php " . escapeshellarg($workerPath) . " " . $jsonPayload . " > /dev/null 2>&1 &");
     }
 }
 
@@ -364,13 +356,16 @@ function broadcastToSoketi(string $channel, string $event, array $data): bool {
     $auth_signature = hash_hmac('sha256', $string_to_sign, SOKETI_SECRET);
     
     $url = "https://" . SOKETI_HOST . "$path?$auth_query&auth_signature=$auth_signature";
-
     $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $body,
+        CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+        CURLOPT_TIMEOUT        => 2,
+        CURLOPT_IPRESOLVE      => CURL_IPRESOLVE_V4,
+        CURLOPT_TCP_NODELAY    => 1,
+    ]);
     
     $response = curl_exec($ch);
     $info = curl_getinfo($ch);

@@ -59,6 +59,8 @@ while (true) {
             processIncomingCall($payload);
         } else if ($type === 'message_edited') {
             processMessageEdited($payload);
+        } else if ($type === 'social_push') {
+            processSocialPush($payload);
         }
 
     } catch (Exception $e) {
@@ -78,21 +80,16 @@ function processNewMessage($payload) {
     $msgType     = $payload['message_type'];
     $msgRow      = $payload['message_row'];
 
-    // 1. Broadcast to Soketi
-    $logSoketi = "[" . date('Y-m-d H:i:s') . "] WORKER: Broadcasting to Soketi...\n";
-    @file_put_contents(__DIR__ . '/../worker_debug.txt', $logSoketi, FILE_APPEND);
-    broadcastToSoketi("match_$matchId", "new_message", ['message' => $msgRow]);
-
-    // 2. Send Push Notification
+    // 1. Send Push Notification FIRST for speed
     $msgPreview = ($msgType === 'image') ? '📷 Photo' : $message;
     $db = getDB();
-    $logPush = "[" . date('Y-m-d H:i:s') . "] WORKER: Sending Push to $recipientId...\n";
-    @file_put_contents(__DIR__ . '/../worker_debug.txt', $logPush, FILE_APPEND);
-    
     $pushRes = sendPush($db, $recipientId, 'message', $senderName, $msgPreview, [
         'match_id'  => (string)$matchId,
         'sender_id' => (string)$senderId,
     ]);
+    
+    // 2. Broadcast to Soketi
+    broadcastToSoketi("match_$matchId", "new_message", ['message' => $msgRow]);
     $db->close();
 
     // 3. Clear Chat List Cache (NITRO)
@@ -105,6 +102,28 @@ function processNewMessage($payload) {
     $resultMsg = "[" . date('Y-m-d H:i:s') . "] WORKER: " . ($pushRes ? "SUCCESS" : "FAILED") . " for user $recipientId\n";
     echo $resultMsg;
     @file_put_contents(__DIR__ . '/../worker_debug.txt', $resultMsg, FILE_APPEND);
+}
+
+function processSocialPush($payload) {
+    $subType  = $payload['sub_type'];
+    $toUserId = (int)$payload['recipient_id'];
+    $fromId   = (int)$payload['sender_id'];
+    $message  = $payload['message'] ?? '';
+    $matchId  = $payload['match_id'] ?? 0;
+
+    $db = getDB();
+    if ($subType === 'match') {
+        sendMatchNotification($db, $fromId, $toUserId, (int)$matchId);
+    } elseif ($subType === 'like') {
+        sendLikeNotification($db, $fromId, $toUserId);
+    } elseif ($subType === 'superlike') {
+        sendSuperLikeNotification($db, $fromId, $toUserId);
+    } elseif ($subType === 'compliment') {
+        sendComplimentNotification($db, $fromId, $toUserId, $message);
+    } elseif ($subType === 'profile_view') {
+        sendProfileViewNotification($db, $fromId, $toUserId);
+    }
+    $db->close();
 }
 
 function processMessagesRead($payload) {

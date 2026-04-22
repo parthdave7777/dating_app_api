@@ -34,15 +34,8 @@ if ($type === 'new_message') {
     $msgType     = $payload['message_type'];
     $msgRow      = $payload['message_row'];
 
-    // 1. Broadcast to Soketi (Background)
-    $res = broadcastToSoketi("match_$matchId", "new_message", [
-        'message' => $msgRow
-    ]);
-    workerLog("Soketi Broadcast " . ($res ? "SUCCESS" : "FAILED") . " for match $matchId");
-
-    // 2. Send Push Notification (Background)
+    // 1. Send Push Notification (Background) - DO THIS FIRST for speed
     $msgPreview = ($msgType === 'image') ? '📷 Photo' : $message;
-    
     $db = getDB();
     $pushRes = sendPush($db, $recipientId, 'message', $senderName, $msgPreview, [
         'match_id'  => (string)$matchId,
@@ -50,6 +43,12 @@ if ($type === 'new_message') {
     ]);
     workerLog("FCM Push " . ($pushRes ? "SENT" : "FAILED") . " to user $recipientId");
     $db->close();
+
+    // 2. Broadcast to Soketi (Background) - This can be slightly delayed
+    $res = broadcastToSoketi("match_$matchId", "new_message", [
+        'message' => $msgRow
+    ]);
+    workerLog("Soketi Broadcast " . ($res ? "SUCCESS" : "FAILED") . " for match $matchId");
 }
 else if ($type === 'messages_read') {
     $matchId  = $payload['match_id'];

@@ -311,26 +311,8 @@ function sendPush(
 
     $url = 'https://fcm.googleapis.com/v1/projects/' . $projectId . '/messages:send';
 
-    // SPEED OPT 6: Fire FCM push asynchronously so swipe.php responds instantly.
-    // BUG FIX: On Windows XAMPP, exec() with Linux shell syntax (> /dev/null) fails.
-    // Force Option B (standard curl) for Windows local development to ensure reliability.
-    $isWindows = strncasecmp(PHP_OS, 'WIN', 3) === 0;
-    $disabledFunctions = array_map('trim', explode(',', ini_get('disable_functions')));
-    $execAvailable = !$isWindows && function_exists('exec') && !in_array('exec', $disabledFunctions);
-    
-    if ($execAvailable) {
-        // Option A — async fire-and-forget
-        $payload = json_encode($message);
-        $cmd = "curl -s -X POST " . escapeshellarg($url)
-             . " -H " . escapeshellarg('Authorization: Bearer ' . $accessToken)
-             . " -H 'Content-Type: application/json'"
-             . " -d " . escapeshellarg($payload)
-             . " > /dev/null 2>&1 &";
-        exec($cmd);
-        error_log("[FCM] Push dispatched async to user $toUserId type=$type");
-        $success = true;
-    } else {
-        // Option B — blocking curl with fast 3s timeout
+    // blocking curl (Safe inside async background worker)
+        // Option B — blocking curl 
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_POST           => true,
@@ -340,7 +322,9 @@ function sendPush(
             ],
             CURLOPT_POSTFIELDS     => json_encode($message),
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 3,  // Reduced from 8s
+            CURLOPT_TIMEOUT        => 2,  // Hard cap at 2s 
+            CURLOPT_IPRESOLVE      => CURL_IPRESOLVE_V4, // Faster DNS on many hosts
+            CURLOPT_TCP_NODELAY    => 1, // Minimize latency
         ]);
 
         $startSend = microtime(true);
