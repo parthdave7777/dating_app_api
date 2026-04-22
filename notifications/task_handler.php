@@ -25,10 +25,12 @@ function handleTaskDirectly(array $payload) {
 
         // 2. Send Push Notification
         $msgPreview = ($msgType === 'image') ? '📷 Photo' : $message;
-        sendPush(getDB(), $recipientId, 'message', $senderName, $msgPreview, [
+        $pushResult = sendPush(getDB(), $recipientId, 'message', $senderName, $msgPreview, [
             'match_id'  => (string)$matchId,
             'sender_id' => (string)$senderId,
         ]);
+        
+        error_log("[DEBUG_ASYNC] Push Result for User $recipientId: " . ($pushResult ? "SUCCESS" : "FAILED"));
 
         // 3. Clear Cache
         $redis = getRedis();

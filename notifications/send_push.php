@@ -350,7 +350,8 @@ function sendPush(
         }
     }
     if (!$success) {
-        error_log("[FCM] sendPush() returning FALSE for user $toUserId");
+        $err = isset($ch) ? curl_error($ch) : "No CURL resource";
+        error_log("[FCM] sendPush() returning FALSE for user $toUserId. HTTP: " . ($httpCode ?? 'N/A') . " Error: $err");
     }
     return $success;
 }

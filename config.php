@@ -475,12 +475,17 @@ function autoSyncUserMeta(int $userId, mysqli $db): void {
     }
 
     // 2. Auto-refresh daily credits (e.g., reset to daily free amount every 24h)
-    $res = $db->query("SELECT last_credit_refresh FROM users WHERE id = $userId");
+    $res = $db->query("SELECT credits, last_credit_refresh FROM users WHERE id = $userId");
     if ($res && $row = $res->fetch_assoc()) {
         $last = $row['last_credit_refresh'];
-        if (!$last || (time() - strtotime($last) > 86400)) {
-            $db->query("UPDATE users SET credits = " . DAILY_FREE_CREDITS . ", last_credit_refresh = NOW() WHERE id = $userId");
-            $db->query("INSERT INTO credit_logs (user_id, amount, reason) VALUES ($userId, " . DAILY_FREE_CREDITS . ", 'Daily reset')");
+        $current = (int)$row['credits'];
+        $isNewDay = (!$last || (time() - strtotime($last) > 86400));
+        
+        if ($isNewDay) {
+            // Only top up to the daily free limit, don't reduce if they have more (e.g. bought credits)
+            $newAmount = max($current, DAILY_FREE_CREDITS);
+            $db->query("UPDATE users SET credits = $newAmount, last_credit_refresh = NOW() WHERE id = $userId");
+            $db->query("INSERT INTO credit_logs (user_id, amount, reason) VALUES ($userId, " . ($newAmount - $current) . ", 'Daily reset')");
         }
     }
 }
