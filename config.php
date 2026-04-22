@@ -327,60 +327,14 @@ function generateToken(int $userId): string {
  * Moves expensive background tasks (Push Notifs, Socket Broadcasts) 
  * to a Redis-backed queue. This prevents spawning PHP processes per-request.
  */
+/**
+ * DIRECT TASK DISPATCHER
+ * Switched to SYNC delivery as per request.
+ * No longer requires scripts/worker.php to be running.
+ */
 function dispatchAsync(array $payload): void {
-    $logFile = __DIR__ . "/worker_debug.txt";
-    $json    = json_encode($payload);
-    $redis   = getRedis();
-    $type    = $payload['action_type'] ?? 'unknown';
-    
-    // DEBUG: Log the dispatch attempt
-    @file_put_contents($logFile, "[" . date('Y-m-d H:i:s') . "] DISPATCH: $type via " . ($redis ? "Redis" : "PHP-CLI") . "\n", FILE_APPEND);
-
-    // 1. TRY REDIS (High Performance)
-    if ($redis) {
-        try {
-            $redis->lPush('task_queue', $json);
-            return;
-        } catch (Exception $e) {
-            @file_put_contents($logFile, "[" . date('Y-m-d H:i:s') . "] REDIS FAIL: " . $e->getMessage() . "\n", FILE_APPEND);
-        }
-    }
-
-    // 2. TRY BACKGROUND SPAWNING
-    $workerPath = __DIR__ . "/notifications/async_worker.php";
-    $isWindows  = strncasecmp(PHP_OS, 'WIN', 3) === 0;
-
-    if ($isWindows) {
-        $phpPath = 'php';
-        if (file_exists('C:\xampp\php\php.exe')) $phpPath = 'C:\xampp\php\php.exe';
-        
-        $arg = '"' . str_replace('"', '\"', $json) . '"';
-        $cmd = "start /B $phpPath " . escapeshellarg($workerPath) . " $arg";
-        pclose(popen($cmd, "r"));
-        
-        // On Windows local, we stop here.
-        return;
-    } 
-
-    // 3. FINAL FALLBACK: Direct Send (Safety Net for Railway/Production)
-    // If we are on Linux (Railway) and Redis is down, we send directly 
-    // to guarantee the notification arrives, even if it adds 1s of lag.
-    if ($type === 'new_message' || $type === 'incoming_call') {
-        @file_put_contents($logFile, "[" . date('Y-m-d H:i:s') . "] FALLBACK: Direct sending $type\n", FILE_APPEND);
-        require_once __DIR__ . '/notifications/send_push.php';
-        $db = getDB();
-        
-        if ($type === 'new_message') {
-            $msgType = $payload['message_type'] ?? 'text';
-            $preview = ($msgType === 'image') ? '📷 Photo' : ($payload['message_text'] ?? 'New message');
-            sendPush($db, $payload['recipient_id'], 'message', $payload['sender_name'], $preview, [
-                'match_id'  => (string)$payload['match_id'],
-                'sender_id' => (string)$payload['sender_id'],
-            ]);
-        } else if ($type === 'incoming_call') {
-            sendPush($db, $payload['recipient_id'], 'incoming_call', $payload['title'], $payload['body'], $payload['data']);
-        }
-    }
+    require_once __DIR__ . '/notifications/task_handler.php';
+    handleTaskDirectly($payload);
 }
 
 // ─── REAL-TIME CHAT (SOKETI) ─────────────────────────────────
