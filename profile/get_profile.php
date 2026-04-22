@@ -23,8 +23,12 @@ if (isset($_GET['target_id']) && (int)$_GET['target_id'] !== $userId) {
     $db->query("INSERT INTO profile_views (viewer_id, viewed_id) VALUES ($userId, $targetId) ON DUPLICATE KEY UPDATE viewed_at = NOW()");
 
     if ($shouldNotify) {
-        require_once __DIR__ . '/../notifications/send_push.php';
-        sendProfileViewNotification($db, $userId, $targetId);
+        dispatchAsync([
+            'action_type'  => 'social_push',
+            'sub_type'     => 'profile_view',
+            'recipient_id' => $targetId,
+            'sender_id'    => $userId
+        ]);
     }
 
     // 2. Block Check
@@ -70,7 +74,7 @@ $posts  = $profileData['posts'];
         ";
         $u1 = min($userId, $targetId); $u2 = max($userId, $targetId);
         $cStmt = $db->prepare($compSql);
-        $cStmt->bind_param('iiiiiiii', $u1, $u2, $u1, $u2, $userId, $targetId, $userId);
+        $cStmt->bind_param('iiiiiii', $u1, $u2, $u1, $u2, $userId, $targetId, $userId);
         $cStmt->execute();
         $cRes = $cStmt->get_result()->fetch_assoc();
         $cStmt->close();

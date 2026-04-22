@@ -84,3 +84,25 @@ else if ($type === 'message_edited') {
     ]);
     workerLog("Edit Broadcast " . ($res ? "SUCCESS" : "FAILED") . " for match $matchId");
 }
+else if ($type === 'social_push') {
+    $subType  = $payload['sub_type'];
+    $toUserId = (int)$payload['recipient_id'];
+    $fromId   = (int)$payload['sender_id'];
+    $message  = $payload['message'] ?? '';
+    $matchId  = $payload['match_id'] ?? 0;
+
+    $db = getDB();
+    if ($subType === 'match') {
+        sendMatchNotification($db, $fromId, $toUserId, (int)$matchId);
+    } elseif ($subType === 'like') {
+        sendLikeNotification($db, $fromId, $toUserId);
+    } elseif ($subType === 'superlike') {
+        sendSuperLikeNotification($db, $fromId, $toUserId);
+    } elseif ($subType === 'compliment') {
+        sendComplimentNotification($db, $fromId, $toUserId, $message);
+    } elseif ($subType === 'profile_view') {
+        sendProfileViewNotification($db, $fromId, $toUserId);
+    }
+    workerLog("Social Push ($subType) handled for user $toUserId");
+    $db->close();
+}
