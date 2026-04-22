@@ -40,13 +40,20 @@ if ($file['size'] > 10 * 1024 * 1024) {
 }
 
 $isSelfie = ($_POST['is_selfie'] ?? '0') === '1';
+$isDP     = ($_POST['is_dp'] ?? '0') === '1';
 $db = getDB();
 
-// FORCE: User cannot choose DP. Only the first photo they ever upload is designated as DP.
-// Check if any DP already exists for this user.
-$resCount = $db->query("SELECT COUNT(*) as cnt FROM user_photos WHERE user_id = $userId AND is_dp = 1");
-$rowCount = $resCount->fetch_assoc();
-$isDP     = ((int)$rowCount['cnt'] === 0);
+if ($isDP) {
+    // Clear existing DP flags for this user
+    $db->query("UPDATE user_photos SET is_dp = 0 WHERE user_id = $userId");
+} else {
+    // fallback: if user has NO DP at all, make this one a DP
+    $resCount = $db->query("SELECT COUNT(*) as cnt FROM user_photos WHERE user_id = $userId AND is_dp = 1");
+    $rowCount = $resCount->fetch_assoc();
+    if ((int)$rowCount['cnt'] === 0) {
+        $isDP = true;
+    }
+}
 
 // ── Upload to Cloudinary ──────────────────────────────────────
 $folder   = 'dating_app/photos';
