@@ -21,8 +21,16 @@ if (isset($_GET['target_id']) && (int)$_GET['target_id'] !== $userId) {
         $shouldNotify = false;
     }
 
+    // ── Check if already matched (Chat/Match views are free) ────
+    $matchCheck = $db->prepare("SELECT id FROM matches WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)");
+    $u1 = min($userId, $targetId); $u2 = max($userId, $targetId);
+    $matchCheck->bind_param('iiii', $u1, $u2, $u1, $u2);
+    $matchCheck->execute();
+    $alreadyMatched = $matchCheck->get_result()->num_rows > 0;
+    $matchCheck->close();
+
     // ── Credit Deduction for Map/Discovery View ────────────────
-    if ($isNewView) {
+    if ($isNewView && !$alreadyMatched) {
         if (!deductCredits($db, $userId, CREDIT_COST_PROFILE_VIEW, "First View: User ID $targetId")) {
             http_response_code(402);
             echo json_encode(['status' => 'error', 'message' => 'INSUFFICIENT_CREDITS', 'required' => CREDIT_COST_PROFILE_VIEW]);

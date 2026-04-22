@@ -93,6 +93,12 @@ $calleeToken = RtcTokenBuilder2::buildTokenWithUid(
 // ── Charge Initiator for the first minute ────────────────────
 deductCredits($db, $callerId, CREDIT_COST_CALL_MIN, "Video Call Initial Minute: Match $matchId");
 
+// Update call_logs to 'accepted' so pulse deductions can proceed
+$upLog = $db->prepare("UPDATE call_logs SET status = 'accepted' WHERE match_id = ? AND status = 'ringing' ORDER BY id DESC LIMIT 1");
+$upLog->bind_param('i', $matchId);
+$upLog->execute();
+$upLog->close();
+
 sendPush(
     $db,
     $callerId,
