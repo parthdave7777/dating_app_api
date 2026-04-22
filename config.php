@@ -322,20 +322,38 @@ function generateToken(int $userId): string {
     return "$header.$payload.$signature";
 }
 
+// ─── HIGH-PERFORMANCE ASYNC DISPATCHER (ZERO-SERVICE) ───────
 /**
- * HIGH-PERFORMANCE ASYNC DISPATCHER
- * Moves expensive background tasks (Push Notifs, Socket Broadcasts) 
- * to a Redis-backed queue. This prevents spawning PHP processes per-request.
+ * Using fastcgi_finish_request, we can return the response to the user
+ * immediately and then process expensive tasks (Notifications, Soketi) 
+ * in the background without needing a separate worker service.
  */
-/**
- * DIRECT TASK DISPATCHER
- * Switched to SYNC delivery as per request.
- * No longer requires scripts/worker.php to be running.
- */
+$GLOBAL_ASYNC_TASKS = [];
+
 function dispatchAsync(array $payload): void {
-    require_once __DIR__ . '/notifications/task_handler.php';
-    handleTaskDirectly($payload);
+    global $GLOBAL_ASYNC_TASKS;
+    $GLOBAL_ASYNC_TASKS[] = $payload;
 }
+
+register_shutdown_function(function() {
+    global $GLOBAL_ASYNC_TASKS;
+    if (empty($GLOBAL_ASYNC_TASKS)) return;
+
+    // 1. Send the response to the user and close the connection
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
+    }
+
+    // 2. Process tasks in the background
+    require_once __DIR__ . '/notifications/task_handler.php';
+    foreach ($GLOBAL_ASYNC_TASKS as $task) {
+        try {
+            handleTaskDirectly($task);
+        } catch (Exception $e) {
+            error_log("[ASYNC ERROR] " . $e->getMessage());
+        }
+    }
+});
 
 // ─── REAL-TIME CHAT (SOKETI) ─────────────────────────────────
 define('SOKETI_HOST',   getenv('SOKETI_HOST')   ?: 'soketi-production-3817.up.railway.app');
