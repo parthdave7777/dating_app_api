@@ -304,11 +304,13 @@ function generateToken(int $userId): string {
 function dispatchAsync(array $payload): void {
     $redis = getRedis();
     if ($redis) {
-        // Option 1: Fast Redis Push
+        // Option 1: Fast Redis Push (Used when worker.php is running)
         $redis->lPush('task_queue', json_encode($payload));
-    } else {
-        // Option 2: Fallback to direct background process
-        $jsonPayload = escapeshellarg(json_encode($payload));
+        return;
+    }
+    
+    // Option 2: Fallback to direct background process
+    $jsonPayload = escapeshellarg(json_encode($payload));
         $workerPath  = __DIR__ . "/notifications/async_worker.php";
         
         $isWindows = strncasecmp(PHP_OS, 'WIN', 3) === 0;
