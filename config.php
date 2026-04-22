@@ -98,9 +98,8 @@ if (APP_ENV === 'local') {
 function getDB(): mysqli {
     static $conn = null;
     if ($conn !== null) {
-        try {
-            if (mysqli_ping($conn)) return $conn;
-        } catch (Exception $e) { $conn = null; }
+        if (@mysqli_ping($conn)) return $conn;
+        $conn = null;
     }
 
     try {
@@ -339,12 +338,12 @@ register_shutdown_function(function() {
     global $GLOBAL_ASYNC_TASKS;
     if (empty($GLOBAL_ASYNC_TASKS)) return;
 
-    // 1. Send the response to the user and close the connection
+    // Send response to user if possible
     if (function_exists('fastcgi_finish_request')) {
         fastcgi_finish_request();
     }
 
-    // 2. Process tasks in the background
+    // Process tasks using absolute paths
     require_once __DIR__ . '/notifications/task_handler.php';
     foreach ($GLOBAL_ASYNC_TASKS as $task) {
         try {

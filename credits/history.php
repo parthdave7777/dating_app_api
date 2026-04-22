@@ -11,12 +11,17 @@ if (!$userId) {
 $db = getDB();
 
 try {
-    // 🔍 FILTER: Only show real financial purchases
-    // We check for is_purchase = 1 (New standard) OR the 'Purchase:' prefix (Legacy)
-    $stmt = $db->prepare("SELECT amount, reason, created_at FROM credit_logs 
-                          WHERE user_id = ? 
-                          AND (is_purchase = 1 OR reason LIKE 'Purchase:%') 
-                          ORDER BY created_at DESC LIMIT 50");
+    // Optimized query to fetch logs with potential purchase metadata
+    $stmt = $db->prepare("
+        SELECT 
+            cl.amount, cl.reason, cl.created_at, cl.is_purchase,
+            pt.product_id, pt.order_id
+        FROM credit_logs cl
+        LEFT JOIN purchase_tokens pt ON (cl.reason = CONCAT('Play purchase: ', pt.product_id) AND pt.user_id = cl.user_id)
+        WHERE cl.user_id = ? 
+        AND (cl.is_purchase = 1 OR cl.reason LIKE 'Purchase:%') 
+        ORDER BY cl.created_at DESC 
+        LIMIT 50");
     $stmt->bind_param('i', $userId);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -24,16 +29,28 @@ try {
 
     $history = [];
     while ($row = $result->fetch_assoc()) {
+        $reason = $row['reason'];
+        $source = 'other';
+        
+        if (strpos($reason, 'Play purchase:') !== false) {
+            $source = 'google_play';
+        } elseif (strpos($reason, 'Purchase:') !== false) {
+            $source = 'razorpay';
+        }
+
         $history[] = [
-            'amount' => (int)$row['amount'],
-            'reason' => $row['reason'],
-            'date'   => $row['created_at'],
-            'is_purchase' => true
+            'amount'      => (int)$row['amount'],
+            'reason'      => $reason,
+            'date'        => $row['created_at'],
+            'is_purchase' => (bool)$row['is_purchase'],
+            'source'      => $source,
+            'product_id'  => $row['product_id'] ?? null,
+            'order_id'    => $row['order_id'] ?? null
         ];
     }
 
     echo json_encode([
-        'status' => 'success',
+        'status'  => 'success',
         'history' => $history
     ]);
 

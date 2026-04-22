@@ -53,4 +53,14 @@ function handleTaskDirectly(array $payload) {
             'match_id'   => $payload['match_id']
         ]);
     }
+    else if ($type === 'acknowledge_purchase') {
+        require_once __DIR__ . '/../credits/acknowledge.php';
+        acknowledgeGooglePurchase(
+            getDB(), 
+            $payload['package_name'], 
+            $payload['product_id'], 
+            $payload['purchase_token'], 
+            $payload['user_id']
+        );
+    }
 }
