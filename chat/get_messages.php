@@ -114,7 +114,7 @@ function buildLatestResponse(mysqli $db, int $matchId, int $userId, int $otherId
         SELECT m.id, m.sender_id, m.message, m.type,
                m.is_read, m.is_received, m.is_opened, m.is_view_once,
                m.is_deleted, m.is_edited, m.deleted_by, CONCAT(REPLACE(m.created_at, ' ', 'T'), '+05:30') as created_at,
-               m.call_event, m.duration, m.reply_to_id, rm.message AS reply_text
+               m.call_event, m.duration, m.reply_to_id, rm.message AS reply_text, rm.type AS reply_type
         FROM messages m
         LEFT JOIN messages rm ON rm.id = m.reply_to_id
         WHERE m.match_id = ?
@@ -147,7 +147,7 @@ function buildBeforeResponse(mysqli $db, int $matchId, int $userId, int $otherId
         SELECT m.id, m.sender_id, m.message, m.type,
                m.is_read, m.is_received, m.is_opened, m.is_view_once,
                m.is_deleted, m.is_edited, m.deleted_by, CONCAT(REPLACE(m.created_at, ' ', 'T'), '+05:30') as created_at,
-               m.call_event, m.duration, m.reply_to_id, rm.message AS reply_text
+               m.call_event, m.duration, m.reply_to_id, rm.message AS reply_text, rm.type AS reply_type
         FROM messages m
         LEFT JOIN messages rm ON rm.id = m.reply_to_id
         WHERE m.match_id = ? AND m.id < ?
@@ -180,7 +180,7 @@ function buildResponse(mysqli $db, int $matchId, int $userId, int $otherId, int 
         SELECT m.id, m.sender_id, m.message, m.type,
                m.is_read, m.is_received, m.is_opened, m.is_view_once,
                m.is_deleted, m.is_edited, m.deleted_by, CONCAT(REPLACE(m.created_at, ' ', 'T'), '+05:30') as created_at,
-               m.call_event, m.duration, m.reply_to_id, rm.message AS reply_text
+               m.call_event, m.duration, m.reply_to_id, rm.message AS reply_text, rm.type AS reply_type
         FROM messages m
         LEFT JOIN messages rm ON rm.id = m.reply_to_id
         WHERE m.match_id = ? AND m.id > ?
@@ -241,7 +241,7 @@ function buildFullResponse(mysqli $db, int $matchId, int $userId, int $otherId):
         SELECT m.id, m.sender_id, m.message, m.type,
                m.is_read, m.is_received, m.is_opened, m.is_view_once,
                m.is_deleted, m.is_edited, m.deleted_by, CONCAT(REPLACE(m.created_at, ' ', 'T'), '+05:30') as created_at,
-               m.call_event, m.duration, m.reply_to_id, rm.message AS reply_text
+               m.call_event, m.duration, m.reply_to_id, rm.message AS reply_text, rm.type AS reply_type
         FROM messages m
         LEFT JOIN messages rm ON rm.id = m.reply_to_id
         WHERE m.match_id = ?
@@ -280,6 +280,12 @@ function buildMessageArray($result): array {
                 $msg = 'OPENED';
             }
 
+            $replyType = $row['reply_type'] ?? 'text';
+            $replyText = $row['reply_text'] ?? null;
+            if ($replyText && (strpos($replyType, 'image') !== false || strpos($replyText, 'cloudinary') !== false)) {
+                $replyText = '📷 Photo';
+            }
+
             $messages[] = [
                 'id'           => (int)  $row['id'],
                 'sender_id'    => (int)  $row['sender_id'],
@@ -294,7 +300,7 @@ function buildMessageArray($result): array {
                 'deleted_by'   => (int)  ($row['deleted_by'] ?? 0),
                 'created_at'   =>        $row['created_at'],
                 'reply_to_id'  => isset($row['reply_to_id']) ? (int)$row['reply_to_id'] : null,
-                'reply_text'   => $row['reply_text'] ?? null,
+                'reply_text'   => $replyText,
                 'call_event'   =>        $row['call_event'] ?? null,
                 'duration'     => isset($row['duration']) ? (int)$row['duration'] : null,
             ];
