@@ -93,7 +93,7 @@ if ($hasCoords && !$isGlobal) {
 }
 
 // 8. Main candidate query
-$globalCondition = $isGlobal ? "AND ($distSql) >= 500" : "";
+$globalCondition = ""; // In global mode, we remove distance constraints in SQL
 
 $sql = "
     SELECT
@@ -118,13 +118,13 @@ $sql = "
       AND (
             (LOWER(u.gender) IN ('man','male','m')       AND '$targetGenderEsc' = 'man')
           OR (LOWER(u.gender) IN ('woman','female','w')   AND '$targetGenderEsc' = 'woman')
+          OR ('$targetGenderEsc' = 'both')
       )
       AND bl.blocker_id IS NULL
       AND mt.user1_id   IS NULL
-      AND sw.action IS NULL
-      AND ($distSql) >= u.stealth_radius
+      AND (sw.action IS NULL OR (sw.action = 'dislike' AND sw.created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)))
+      AND ($distSql) >= COALESCE(u.stealth_radius, 0)
       $boundsCondition
-      $globalCondition
     ORDER BY " . ($isGlobal ? "u.last_active DESC" : "distance_km ASC") . "
     LIMIT $limit OFFSET $offset
 ";
@@ -139,10 +139,8 @@ $rows = [];
 while ($row = $result->fetch_assoc()) {
     $d = (float)$row['distance_km'];
     
-    // Strict filters
-    if ($isGlobal) {
-        if ($d < 500) continue; // Only show 500km+ in global mode
-    } else if ($hasCoords) {
+    // Strict filters applied only in Local Mode
+    if (!$isGlobal && $hasCoords) {
         if ($d < $minDist || $d > $maxDist) continue;
     }
     

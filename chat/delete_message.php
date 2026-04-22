@@ -58,6 +58,22 @@ $upd = $db->prepare(
 $upd->bind_param('ii', $userId, $messageId);
 $upd->execute();
 $upd->close();
+
+// ── BROADCAST DELETION (REAL-TIME) ──────────────────────────
+// Fetch match_id for broadcast
+$miStmt = $db->prepare("SELECT match_id FROM messages WHERE id = ?");
+$miStmt->bind_param('i', $messageId);
+$miStmt->execute();
+$mRow = $miStmt->get_result()->fetch_assoc();
+$miStmt->close();
+
+if ($mRow) {
+    dispatchAsync([
+        'action_type' => 'messages_read', // Re-using read logic to trigger a full refresh on other clients
+        'match_id'    => (int)$mRow['match_id'],
+        'reader_id'   => $userId
+    ]);
+}
 $db->close();
 
 echo json_encode([
