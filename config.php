@@ -98,7 +98,11 @@ if (APP_ENV === 'local') {
 function getDB(): mysqli {
     static $conn = null;
     if ($conn !== null) {
-        if (@mysqli_ping($conn)) return $conn;
+        try {
+            if (@mysqli_ping($conn)) return $conn;
+        } catch (Throwable $e) {
+            // Object closed or invalid, ignore and reconnect
+        }
         $conn = null;
     }
 
