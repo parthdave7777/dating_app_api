@@ -329,7 +329,6 @@ function dispatchAsync(array $payload): void {
             // Linux Production fallback (async fork)
             exec("nohup php " . escapeshellarg($workerPath) . " " . $jsonPayload . " > /dev/null 2>&1 &");
         }
-    }
 }
 
 // ─── REAL-TIME CHAT (SOKETI) ─────────────────────────────────
