@@ -75,19 +75,10 @@ dispatchAsync($workerPayload);
 
 $db->close();
 
-// 7. Respond to mobile app INSTANTLY
-$response = json_encode([
+// 7. Respond to mobile app
+echo json_encode([
     'status'     => 'success',
     'message_id' => $msgId,
     'message'    => $sharedMessage
 ]);
-
-if (function_exists('fastcgi_finish_request')) {
-    header('Content-Type: application/json');
-    echo $response;
-    fastcgi_finish_request();
-} else {
-    header('Content-Type: application/json');
-    echo $response;
-}
 exit();
