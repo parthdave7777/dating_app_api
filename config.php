@@ -157,19 +157,45 @@ define('REDIS_PASS', getenv('REDISPASSWORD') ?: '');
  */
 function getRedis(): ?Redis {
     static $redis = null;
-    if ($redis !== null) return $redis;
+    
+    // If instance exists, check if it's still alive
+    if ($redis !== null) {
+        try {
+            if ($redis->ping()) return $redis;
+        } catch (Exception $e) {
+            $redis = null; // Connection lost, will try to reconnect
+        }
+    }
 
     if (!class_exists('Redis')) return null;
 
     try {
         $instance = new Redis();
-        // Use a short timeout so we don't hang if Redis is slow
-        $connected = @$instance->connect(REDIS_HOST, (int)REDIS_PORT, 1.5);
+        $url = getenv('REDIS_URL') ?: getenv('REDISHOST');
         
-        if ($connected && !empty(REDIS_PASS)) {
-            $instance->auth(REDIS_PASS);
+        if ($url && str_contains($url, '://')) {
+            // Parse Redis URL (Railway style)
+            $parsed = parse_url($url);
+            $host = $parsed['host'] ?? '127.0.0.1';
+            $port = $parsed['port'] ?? 6379;
+            $pass = $parsed['pass'] ?? '';
+            
+            $connected = @$instance->connect($host, (int)$port, 1.5);
+            if ($connected && !empty($pass)) {
+                $instance->auth($pass);
+            }
+        } else {
+            // Standard host/port/pass
+            $host = getenv('REDISHOST') ?: '127.0.0.1';
+            $port = getenv('REDISPORT') ?: '6379';
+            $pass = getenv('REDISPASSWORD') ?: '';
+            
+            $connected = @$instance->connect($host, (int)$port, 1.5);
+            if ($connected && !empty($pass)) {
+                $instance->auth($pass);
+            }
         }
-
+        
         if ($connected) {
             $redis = $instance;
             return $redis;
