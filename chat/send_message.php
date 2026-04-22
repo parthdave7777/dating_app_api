@@ -68,7 +68,7 @@ $sharedMessage = [
 $recipientId = ((int)$matchRow['user1_id'] === $userId) ? (int)$matchRow['user2_id'] : (int)$matchRow['user1_id'];
 $workerPayload = [
     'action_type'  => 'new_message', 'match_id' => $matchId, 'recipient_id' => $recipientId,
-    'sender_id' => $userId, 'sender_name' => $matchRow['me_name'],
+    'sender_id' => $userId, 'sender_name' => $msgRow['sender_name'],
     'message_text' => $message, 'message_type' => $type, 'message_row' => $sharedMessage
 ];
 dispatchAsync($workerPayload);
