@@ -302,31 +302,37 @@ function generateToken(int $userId): string {
  * to a Redis-backed queue. This prevents spawning PHP processes per-request.
  */
 function dispatchAsync(array $payload): void {
-    $redis = getRedis();
+    $logFile = __DIR__ . "/worker_debug.txt";
+    $json    = json_encode($payload);
+    $redis   = getRedis();
+    
+    // DEBUG: Log the dispatch attempt
+    @file_put_contents($logFile, "[" . date('Y-m-d H:i:s') . "] DISPATCH: " . ($payload['action_type'] ?? 'unknown') . " via " . ($redis ? "Redis" : "PHP-CLI") . "\n", FILE_APPEND);
+
     if ($redis) {
-        // Option 1: Fast Redis Push
-        $redis->lPush('task_queue', json_encode($payload));
-    } else {
-        // Option 2: Fallback to direct background process
-        $jsonPayload = escapeshellarg(json_encode($payload));
-        $workerPath  = __DIR__ . "/notifications/async_worker.php";
-        
-        $isWindows = strncasecmp(PHP_OS, 'WIN', 3) === 0;
-        if ($isWindows) {
-            // Robust Windows PHP detection
-            $phpPath = 'php';
-            if (!`where $phpPath 2>nul`) {
-                if (file_exists('C:\xampp\php\php.exe')) {
-                    $phpPath = 'C:\xampp\php\php.exe';
-                }
-            }
-            // Windows XAMPP fallback (using start /B for async)
-            $cmd = "$phpPath " . escapeshellarg($workerPath) . " " . $jsonPayload;
-            pclose(popen("start /B $cmd", "r"));
-        } else {
-            // Linux Production fallback (async fork)
-            exec("nohup php " . escapeshellarg($workerPath) . " " . $jsonPayload . " > /dev/null 2>&1 &");
+        $redis->lPush('task_queue', $json);
+        return;
+    }
+
+    $workerPath = __DIR__ . "/notifications/async_worker.php";
+    $isWindows  = strncasecmp(PHP_OS, 'WIN', 3) === 0;
+
+    if ($isWindows) {
+        $phpPath = 'php';
+        if (file_exists('C:\xampp\php\php.exe')) {
+            $phpPath = 'C:\xampp\php\php.exe';
         }
+        
+        // On Windows, escapeshellarg often breaks JSON with quotes.
+        // We wrap in double quotes manually for CMD.
+        $arg = '"' . str_replace('"', '\"', $json) . '"';
+        $cmd = "start /B $phpPath " . escapeshellarg($workerPath) . " $arg";
+        
+        @file_put_contents($logFile, "[" . date('Y-m-d H:i:s') . "] CMD: $cmd\n", FILE_APPEND);
+        pclose(popen($cmd, "r"));
+    } else {
+        $arg = escapeshellarg($json);
+        exec("nohup php " . escapeshellarg($workerPath) . " $arg > /dev/null 2>&1 &");
     }
 }
 
