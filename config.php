@@ -96,6 +96,9 @@ if (APP_ENV === 'local') {
 }
 
 function getDB(): mysqli {
+    static $conn = null;
+    if ($conn !== null && $conn->ping()) return $conn;
+
     try {
         mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
         $conn = mysqli_init();
@@ -103,21 +106,21 @@ function getDB(): mysqli {
 
         if (USE_SSL) {
             mysqli_options($conn, MYSQLI_OPT_SSL_VERIFY_SERVER_CERT, false);
-        // OPTIMIZATION: Only use SSL for public/external database connections.
-        // Internal railway connections (.internal or localhost) are safe and much faster without SSL.
-        $isInternal = (strpos(DB_HOST, '.internal') !== false || DB_HOST === 'localhost' || DB_HOST === '127.0.0.1');
-        $flags = $isInternal ? 0 : MYSQLI_CLIENT_SSL;
-        
-        try {
-            $success = mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT, NULL, $flags);
-            if (!$success) {
-                // Fallback attempt without SSL if SSL failed
-                $success = mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT, NULL, 0);
+            // OPTIMIZATION: Only use SSL for public/external database connections.
+            // Internal railway connections (.internal or localhost) are safe and much faster without SSL.
+            $isInternal = (strpos(DB_HOST, '.internal') !== false || DB_HOST === 'localhost' || DB_HOST === '127.0.0.1');
+            $flags = $isInternal ? 0 : MYSQLI_CLIENT_SSL;
+            
+            try {
+                $success = mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT, NULL, $flags);
+                if (!$success) {
+                    // Fallback attempt without SSL if SSL failed
+                    $success = mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT, NULL, 0);
+                }
+            } catch (Exception $e) {
+                // Final fallback
+                @mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT, NULL, 0);
             }
-        } catch (Exception $e) {
-            // Final fallback
-            @mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT, NULL, 0);
-        }
         } else {
             $success = mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT);
         }
@@ -163,8 +166,8 @@ function getRedis(): ?Redis {
 
     try {
         $instance = new Redis();
-        // Use a short timeout so we don't hang if Redis is slow
-        $connected = @$instance->connect(REDIS_HOST, (int)REDIS_PORT, 1.5);
+        // Use a very short timeout (0.2s) so we don't hang if Redis is slow
+        $connected = @$instance->connect(REDIS_HOST, (int)REDIS_PORT, 0.2);
         
         if ($connected && !empty(REDIS_PASS)) {
             $instance->auth(REDIS_PASS);
@@ -432,7 +435,7 @@ function getAuthUserId(): int {
  * Moves these queries OUT of the auth hot-path.
  */
 function autoSyncUserMeta(int $userId, mysqli $db): void {
-    // 1. Sync location from HTTP headers
+    // 1. Sync location from HTTP headers (Lightweight update)
     $lat = $_SERVER['HTTP_X_LATITUDE'] ?? null;
     $lng = $_SERVER['HTTP_X_LONGITUDE'] ?? null;
     $city = $_SERVER['HTTP_X_CITY'] ?? null;
@@ -442,13 +445,22 @@ function autoSyncUserMeta(int $userId, mysqli $db): void {
         $db->query("UPDATE users SET latitude = $lat, longitude = $lng, last_active = NOW() $citySql WHERE id = $userId");
     }
 
-    // 2. Auto-refresh daily credits (e.g., reset to daily free amount every 24h)
-    $res = $db->query("SELECT last_credit_refresh FROM users WHERE id = $userId");
-    if ($res && $row = $res->fetch_assoc()) {
-        $last = $row['last_credit_refresh'];
-        if (!$last || (time() - strtotime($last) > 86400)) {
-            $db->query("UPDATE users SET credits = " . DAILY_FREE_CREDITS . ", last_credit_refresh = NOW() WHERE id = $userId");
-            $db->query("INSERT INTO credit_logs (user_id, amount, reason) VALUES ($userId, " . DAILY_FREE_CREDITS . ", 'Daily reset')");
+    // 2. Auto-refresh daily credits (Redis Optimized)
+    $redis = getRedis();
+    $today = date('Y-m-d');
+    $skipKey = "daily_refresh_done:$userId:$today";
+
+    if (!$redis || !$redis->get($skipKey)) {
+        $res = $db->query("SELECT last_credit_refresh FROM users WHERE id = $userId");
+        if ($res && $row = $res->fetch_assoc()) {
+            $last = $row['last_credit_refresh'];
+            if (!$last || (time() - strtotime($last) > 86400)) {
+                $db->query("UPDATE users SET credits = " . DAILY_FREE_CREDITS . ", last_credit_refresh = NOW() WHERE id = $userId");
+                $db->query("INSERT INTO credit_logs (user_id, amount, reason) VALUES ($userId, " . DAILY_FREE_CREDITS . ", 'Daily reset')");
+            }
+        }
+        if ($redis) {
+            $redis->setex($skipKey, 86400, "1");
         }
     }
 }

@@ -54,46 +54,37 @@ $photos = $profileData['photos'];
 $dpUrl  = $profileData['dp_url'];
 $posts  = $profileData['posts'];
 
-// 3. Dynamic Viewer-Specific Logic (Match Status & Swipe Status)
-$isMatch = false;
-$matchId = null;
-$hasSwiped = false;
+    $isMatch = false;
+    $matchId = null;
+    $hasSwiped = false;
+    $distance = null;
 
-if ($userId !== $targetId) {
-    // Match check
-    $mStmt = $db->prepare("SELECT id FROM matches WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)");
-    $u1 = min($userId, $targetId); $u2 = max($userId, $targetId);
-    $mStmt->bind_param('iiii', $u1, $u2, $u1, $u2);
-    $mStmt->execute();
-    $mRes = $mStmt->get_result();
-    if ($mRow = $mRes->fetch_assoc()) {
-        $isMatch = true;
-        $matchId = (int) $mRow['id'];
+    if ($userId !== $targetId) {
+        // Multi-purpose "Companion Query"
+        $compSql = "
+            SELECT 
+                (SELECT id FROM matches WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?) LIMIT 1) as match_id,
+                (SELECT id FROM swipes WHERE swiper_id = ? AND swiped_id = ? LIMIT 1) as swipe_id,
+                u.latitude, u.longitude
+            FROM users u WHERE u.id = ?
+        ";
+        $u1 = min($userId, $targetId); $u2 = max($userId, $targetId);
+        $cStmt = $db->prepare($compSql);
+        $cStmt->bind_param('iiiiiiii', $u1, $u2, $u1, $u2, $userId, $targetId, $userId);
+        $cStmt->execute();
+        $cRes = $cStmt->get_result()->fetch_assoc();
+        $cStmt->close();
+
+        if ($cRes) {
+            $matchId = $cRes['match_id'] ? (int)$cRes['match_id'] : null;
+            $isMatch = ($matchId !== null);
+            $hasSwiped = ($cRes['swipe_id'] !== null);
+            
+            if ($cRes['latitude'] && $user['latitude']) {
+                $distance = haversineKm((float)$cRes['latitude'], (float)$cRes['longitude'], (float)$user['latitude'], (float)$user['longitude']);
+            }
+        }
     }
-    $mStmt->close();
-
-    // Swipe check
-    $sStmt = $db->prepare("SELECT id FROM swipes WHERE swiper_id = ? AND swiped_id = ?");
-    $sStmt->bind_param('ii', $userId, $targetId);
-    $sStmt->execute();
-    $hasSwiped = $sStmt->get_result()->num_rows > 0;
-    $sStmt->close();
-}
-
-// 4. Distance Calculation
-$distance = null;
-if ($userId !== $targetId) {
-    // Current user location
-    $locStmt = $db->prepare("SELECT latitude, longitude FROM users WHERE id = ?");
-    $locStmt->bind_param('i', $userId);
-    $locStmt->execute();
-    $locRow = $locStmt->get_result()->fetch_assoc();
-    $locStmt->close();
-
-    if ($locRow && $locRow['latitude'] && $user['latitude']) {
-        $distance = haversineKm((float)$locRow['latitude'], (float)$locRow['longitude'], (float)$user['latitude'], (float)$user['longitude']);
-    }
-}
 
 $db->close();
 

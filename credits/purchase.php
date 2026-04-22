@@ -25,29 +25,6 @@ if ($action === 'verify') {
     }
     
     $db = getDB();
-    
-    // 🔍 SELF-HEALING: Ensure columns and tables exist
-    // 1. Premium Credits Column
-    $checkCol = $db->query("SHOW COLUMNS FROM users LIKE 'premium_credits'");
-    if ($checkCol->num_rows == 0) {
-        $db->query("ALTER TABLE users ADD COLUMN premium_credits INT DEFAULT 0 AFTER credits");
-    }
-    
-    // 2. Credit Logs Table
-    $db->query("CREATE TABLE IF NOT EXISTS credit_logs (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        user_id INT NOT NULL,
-        amount INT NOT NULL,
-        reason VARCHAR(255),
-        is_purchase TINYINT(1) DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )");
-
-    // Ensure is_purchase column exists if table was created previously
-    $checkLogCol = $db->query("SHOW COLUMNS FROM credit_logs LIKE 'is_purchase'");
-    if ($checkLogCol->num_rows == 0) {
-        $db->query("ALTER TABLE credit_logs ADD COLUMN is_purchase TINYINT(1) DEFAULT 0 AFTER reason");
-    }
 
     $db->begin_transaction();
     try {
