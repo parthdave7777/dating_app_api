@@ -207,28 +207,40 @@ function sendPush(
 
     // Filter by type - only block if specifically set to 0
     if ($type === 'message' && isset($row['notif_messages']) && (int)$row['notif_messages'] === 0) {
-        error_log("[FCM] Suppression: User $toUserId has disabled message notifications");
+        $suppMsg = "[FCM] Suppression: User $toUserId has disabled message notifications";
+        error_log($suppMsg);
+        @file_put_contents(__DIR__ . '/../worker_debug.txt', "[" . date('Y-m-d H:i:s') . "] $suppMsg\n", FILE_APPEND);
         return false;
     }
     if ($type === 'match' && isset($row['notif_matches']) && (int)$row['notif_matches'] === 0) {
-        error_log("[FCM] Suppression: User $toUserId has disabled match notifications");
+        $suppMsg = "[FCM] Suppression: User $toUserId has disabled match notifications";
+        error_log($suppMsg);
+        @file_put_contents(__DIR__ . '/../worker_debug.txt', "[" . date('Y-m-d H:i:s') . "] $suppMsg\n", FILE_APPEND);
         return false;
     }
     if (in_array($type, ['like', 'superlike']) && isset($row['notif_likes']) && (int)$row['notif_likes'] === 0) {
-        error_log("[FCM] Suppression: User $toUserId has disabled like/superlike notifications");
+        $suppMsg = "[FCM] Suppression: User $toUserId has disabled like/superlike notifications";
+        error_log($suppMsg);
+        @file_put_contents(__DIR__ . '/../worker_debug.txt', "[" . date('Y-m-d H:i:s') . "] $suppMsg\n", FILE_APPEND);
         return false;
     }
     if ($type === 'profile_view' && isset($row['notif_who_swiped']) && (int)$row['notif_who_swiped'] === 0) {
-        error_log("[FCM] Suppression: User $toUserId has disabled profile view notifications");
+        $suppMsg = "[FCM] Suppression: User $toUserId has disabled profile view notifications";
+        error_log($suppMsg);
+        @file_put_contents(__DIR__ . '/../worker_debug.txt', "[" . date('Y-m-d H:i:s') . "] $suppMsg\n", FILE_APPEND);
         return false;
     }
     if ($type === 'compliment' && isset($row['notif_activity']) && (int)$row['notif_activity'] === 0) {
-        error_log("[FCM] Suppression: User $toUserId has disabled compliment/activity notifications");
+        $suppMsg = "[FCM] Suppression: User $toUserId has disabled compliment/activity notifications";
+        error_log($suppMsg);
+        @file_put_contents(__DIR__ . '/../worker_debug.txt', "[" . date('Y-m-d H:i:s') . "] $suppMsg\n", FILE_APPEND);
         return false;
     }
 
     if (empty($row['fcm_token'])) {
-        error_log("[FCM] No FCM token for user $toUserId. They might be logged out or haven't granted permission.");
+        $errMsg = "[FCM] No FCM token for user $toUserId. (Logged out or denied perms)";
+        error_log($errMsg);
+        @file_put_contents(__DIR__ . '/../worker_debug.txt', "[" . date('Y-m-d H:i:s') . "] $errMsg\n", FILE_APPEND);
         return false;
     }
 
@@ -242,14 +254,12 @@ function sendPush(
     }
 
     // ── All data values must be strings for FCM data messages ─
-    $displayBody = $body;
-    if ($type === 'message') {
-        $displayBody = 'Sent you a message';
-    }
+    $displayBody = !empty($body) ? $body : 'Sent you a message';
+    $displayTitle = !empty($title) ? $title : 'New Message';
 
     $stringData = array_map('strval', array_merge($data, [
         'type'    => $type,
-        'title'   => $title,
+        'title'   => $displayTitle,
         'body'    => $displayBody,
         'sent_at' => (string)microtime(true), // Diagnostic timestamp
     ]));
