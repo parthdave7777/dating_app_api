@@ -35,10 +35,17 @@ try {
         // 3. QUEUE CHECK
         $pending = $redis->lLen('nitro_tasks');
         $results['checks']['pending_tasks'] = $pending;
-        if ($pending > 50) {
-            $results['checks']['worker_status'] = 'WARNING: Heavy queue. Is worker running?';
+        
+        // Wait 1 second and check again to see if worker is active
+        usleep(500000); // 0.5s
+        $pendingNow = $redis->lLen('nitro_tasks');
+        
+        if ($pendingNow < $pending) {
+            $results['checks']['worker_status'] = 'OK (Worker is actively processing)';
+        } else if ($pending > 0) {
+            $results['checks']['worker_status'] = 'STALLED (Tasks are waiting but not being processed. CHECK RAILWAY WORKER!)';
         } else {
-            $results['checks']['worker_status'] = 'OK';
+            $results['checks']['worker_status'] = 'IDLE (Queue is empty, waiting for new tasks)';
         }
     } else {
         $results['checks']['redis'] = 'OFFLINE (Graceful Fallback Active)';
@@ -47,8 +54,12 @@ try {
     $results['checks']['redis'] = 'ERROR: ' . $e->getMessage();
 }
 
-// 4. SOKETI CHECK (Connectivity)
+// 4. SOKETI CHECK (Connectivity & Authentication)
 try {
+    $testMatchId = 999;
+    $broadcastSuccess = broadcastToSoketi("match_$testMatchId", "diagnostic_test", ["ping" => time()]);
+    $results['checks']['soketi_broadcast'] = $broadcastSuccess ? 'OK' : 'FAILED (Check Keys/Secret)';
+    
     $ch = curl_init("https://" . SOKETI_HOST . "/");
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, 3);
