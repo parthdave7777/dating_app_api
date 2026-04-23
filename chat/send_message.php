@@ -97,9 +97,7 @@ $workerPayload = [
     'message_text' => $message, 'message_type' => $type, 'message_row' => $sharedMessage
 ];
 
-// Processing tasks directly now because we have already closed the connection to the user
-require_once __DIR__ . '/../notifications/task_handler.php';
-handleTaskDirectly($workerPayload);
+dispatchAsync($workerPayload);
 
 $db->close();
 exit();

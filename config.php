@@ -331,35 +331,32 @@ function generateToken(int $userId): string {
  * immediately and then process expensive tasks (Notifications, Soketi) 
  * in the background without needing a separate worker service.
  */
-$GLOBAL_ASYNC_TASKS = [];
-
 function dispatchAsync(array $payload): void {
-    global $GLOBAL_ASYNC_TASKS;
-    $GLOBAL_ASYNC_TASKS[] = $payload;
+    $redis = getRedis();
+    if ($redis) {
+        $redis->lPush('nitro_tasks', json_encode($payload));
+    } else {
+        // Fallback if Redis is down (happens rarely)
+        global $GLOBAL_ASYNC_TASKS;
+        $GLOBAL_ASYNC_TASKS[] = $payload;
+    }
 }
 
 register_shutdown_function(function() {
     global $GLOBAL_ASYNC_TASKS;
     if (empty($GLOBAL_ASYNC_TASKS)) return;
 
-    // Send response to user
+    // Send response to user immediately
     if (function_exists('fastcgi_finish_request')) {
         fastcgi_finish_request();
     }
 
-    error_log("[DEBUG_ASYNC] Starting " . count($GLOBAL_ASYNC_TASKS) . " tasks");
-
     try {
         require_once __DIR__ . '/notifications/task_handler.php';
         foreach ($GLOBAL_ASYNC_TASKS as $task) {
-            $type = $task['action_type'] ?? 'unknown';
-            error_log("[DEBUG_ASYNC] Processing: $type");
             handleTaskDirectly($task);
-            error_log("[DEBUG_ASYNC] Success: $type");
         }
-    } catch (Throwable $e) {
-        error_log("[DEBUG_ASYNC] FATAL ERROR: " . $e->getMessage() . " in " . $e->getFile() . " on line " . $e->getLine());
-    }
+    } catch (Throwable $e) {}
 });
 
 // ─── REAL-TIME CHAT (SOKETI) ─────────────────────────────────
