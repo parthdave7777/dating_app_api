@@ -11,91 +11,84 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $userId = getAuthUserId();
 $body   = json_decode(file_get_contents('php://input'), true);
 
-$fullName        = trim($body['full_name']        ?? '');
-$age             = (int)   ($body['age']             ?? 0);
-$genderRaw       = strtolower(trim($body['gender']   ?? ''));
-$lookingForRaw   = strtolower(trim($body['looking_for'] ?? ''));
-
-// Normalize gender strings
-$genderMap = [
-    'male'   => 'man',
-    'female' => 'woman',
-    'men'    => 'man',
-    'women'  => 'woman'
-];
-
-$gender      = $genderMap[$genderRaw]     ?? $genderRaw;
-$lookingFor  = $genderMap[$lookingForRaw] ?? $lookingForRaw;
-
-$bio        = trim($body['bio']         ?? '');
-$interests  = trim($body['interests']   ?? '');
-
-// NEW FIELDS
-$jobTitle    = trim($body['job_title']    ?? '');
-$company     = trim($body['company']      ?? '');
-$education   = trim($body['education']    ?? '');
-$height      = trim($body['height']       ?? '');
-$pets        = trim($body['lifestyle_pets']    ?? '');
-$drinking    = trim($body['lifestyle_drinking'] ?? '');
-$smoking     = trim($body['lifestyle_smoking'] ?? '');
-$workout     = trim($body['lifestyle_workout'] ?? '');
-$diet        = trim($body['lifestyle_diet']    ?? '');
-$schedule    = trim($body['lifestyle_schedule'] ?? '');
-$goal        = trim($body['relationship_goal']  ?? '');
-$commStyle   = trim($body['communication_style']?? '');
-$city        = trim($body['city']               ?? '');
-$showInDisc  = isset($body['show_in_discovery']) ? (int)$body['show_in_discovery'] : 1;
-
-if (empty($fullName)) {
-    echo json_encode(['status' => 'error', 'message' => 'full_name is required']);
+if (!$body) {
+    echo json_encode(['status' => 'error', 'message' => 'Invalid JSON body']);
     exit();
 }
 
-$db   = getDB();
-$stmt = $db->prepare("
-    UPDATE users SET 
-        full_name = ?, 
-        age = ?, 
-        gender = ?,
-        looking_for = ?, 
-        bio = ?, 
-        interests = ?,
-        job_title = ?,
-        company = ?,
-        education = ?,
-        height = ?,
-        lifestyle_pets = ?,
-        lifestyle_drinking = ?,
-        lifestyle_smoking = ?,
-        lifestyle_workout = ?,
-        lifestyle_diet = ?,
-        lifestyle_schedule = ?,
-        relationship_goal = ?,
-        communication_style = ?,
-        city = ?,
-        show_in_discovery = ?
-    WHERE id = ?
-");
+// 1. Map incoming fields to database columns
+$fieldMap = [
+    'full_name'            => 's',
+    'age'                  => 'i',
+    'gender'               => 's',
+    'looking_for'          => 's',
+    'bio'                  => 's',
+    'interests'            => 's',
+    'job_title'            => 's',
+    'company'              => 's',
+    'education'            => 's',
+    'height'               => 's',
+    'lifestyle_pets'       => 's',
+    'lifestyle_drinking'   => 's',
+    'lifestyle_smoking'    => 's',
+    'lifestyle_workout'    => 's',
+    'lifestyle_diet'       => 's',
+    'lifestyle_schedule'   => 's',
+    'relationship_goal'    => 's',
+    'communication_style'  => 's',
+    'city'                 => 's',
+    'show_in_discovery'    => 'i'
+];
 
+$updates = [];
+$types   = '';
+$params  = [];
+
+// 2. Normalize gender strings if they exist
+$genderMap = ['male' => 'man', 'female' => 'woman', 'men' => 'man', 'women' => 'woman'];
+if (isset($body['gender']))      $body['gender']      = $genderMap[strtolower(trim($body['gender']))]      ?? trim($body['gender']);
+if (isset($body['looking_for'])) $body['looking_for'] = $genderMap[strtolower(trim($body['looking_for']))] ?? trim($body['looking_for']);
+
+// 3. Build dynamic query
+foreach ($fieldMap as $apiKey => $type) {
+    if (isset($body[$apiKey])) {
+        $updates[] = "$apiKey = ?";
+        $types .= $type;
+        $params[] = $body[$apiKey];
+    }
+}
+
+if (empty($updates)) {
+    echo json_encode(['status' => 'success', 'message' => 'No changes provided']);
+    exit();
+}
+
+$db = getDB();
+$sql = "UPDATE users SET " . implode(', ', $updates) . " WHERE id = ?";
+$types .= 'i';
+$params[] = $userId;
+
+$stmt = $db->prepare($sql);
 if (!$stmt) {
     echo json_encode(['status' => 'error', 'message' => 'Prepare failed: ' . $db->error]);
     exit();
 }
 
-$stmt->bind_param('sisssssssssssssssssii', 
-    $fullName, $age, $gender, $lookingFor, $bio, $interests, 
-    $jobTitle, $company, $education, $height,
-    $pets, $drinking, $smoking, $workout, $diet, $schedule,
-    $goal, $commStyle, $city, $showInDisc,
-    $userId
-);
+$stmt->bind_param($types, ...$params);
 
 if ($stmt->execute()) {
-    clearProfileCache($userId);
+    $stmt->close();
+    
+    // Return success to the app immediately
     echo json_encode(['status' => 'success', 'message' => 'Profile updated']);
+    
+    // Background task: clear cache after response is sent
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
+    }
+    clearProfileCache($userId);
 } else {
     echo json_encode(['status' => 'error', 'message' => 'Update failed: ' . $stmt->error]);
 }
 
-$stmt->close();
 $db->close();
