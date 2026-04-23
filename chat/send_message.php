@@ -64,6 +64,31 @@ $sharedMessage = [
     'created_at'  =>        $now,
 ];
 
+// === NITRO FINISH (Response to App Immediately) ===
+$responseData = json_encode([
+    'status'     => 'success',
+    'message_id' => $msgId,
+    'message'    => $sharedMessage
+]);
+
+ignore_user_abort(true);
+set_time_limit(30);
+
+// Close the connection so the mobile app finishes the request immediately
+ob_start();
+echo $responseData;
+$size = ob_get_length();
+header("Content-Length: $size");
+header("Connection: close");
+header("Content-Encoding: none");
+ob_end_flush();
+flush();
+
+if (function_exists('fastcgi_finish_request')) {
+    fastcgi_finish_request();
+}
+
+// === BACKGROUND TASKS (Notifications) ===
 // 6. Non-critical Background Dispatch (NITRO Queue)
 $recipientId = ((int)$matchRow['user1_id'] === $userId) ? (int)$matchRow['user2_id'] : (int)$matchRow['user1_id'];
 $workerPayload = [
@@ -71,14 +96,10 @@ $workerPayload = [
     'sender_id' => $userId, 'sender_name' => $matchRow['me_name'],
     'message_text' => $message, 'message_type' => $type, 'message_row' => $sharedMessage
 ];
-dispatchAsync($workerPayload);
+
+// Processing tasks directly now because we have already closed the connection to the user
+require_once __DIR__ . '/../notifications/task_handler.php';
+handleTaskDirectly($workerPayload);
 
 $db->close();
-
-// 7. Respond to mobile app
-echo json_encode([
-    'status'     => 'success',
-    'message_id' => $msgId,
-    'message'    => $sharedMessage
-]);
 exit();
