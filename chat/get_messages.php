@@ -94,9 +94,12 @@ exit();
 // ── Helpers ──────────────────────────────────────────────────
 
 function getReadHash(mysqli $db, int $matchId): string {
+    // OPTIMIZATION: Only hash the last 50 messages. Detecting changes in the 
+    // last 50 is sufficient for real-time Blue Ticks / Received / Deleted status.
     $stmt = $db->prepare(
       "SELECT MAX(id), SUM(is_read), SUM(is_received), SUM(is_deleted), SUM(is_edited) 
-       FROM messages WHERE match_id = ?"
+       FROM (SELECT id, is_read, is_received, is_deleted, is_edited FROM messages 
+             WHERE match_id = ? ORDER BY id DESC LIMIT 50) as recent"
     );
     $stmt->bind_param('i', $matchId);
     $stmt->execute();

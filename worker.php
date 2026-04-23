@@ -22,20 +22,27 @@ $lastPing = time();
 
 while (true) {
     try {
+        $redis = getRedis();
+        if (!$redis) {
+            echo "[" . date('H:i:s') . "] Redis offline. Retrying in 5s...\n";
+            sleep(5);
+            continue;
+        }
+
         // BLPOP blocks for 20 seconds waiting for a new task
-        // This is much more efficient than polling.
         $taskData = $redis->blPop(['nitro_tasks'], 20);
 
-        if ($taskData) {
-            // $taskData[0] is the key name, $taskData[1] is the value
+        if ($taskData && isset($taskData[1])) {
             $payload = json_decode($taskData[1], true);
             
             if ($payload) {
-                echo "[" . date('H:i:s') . "] Processing task: " . ($payload['action_type'] ?? 'unknown') . "\n";
+                $action = $payload['action_type'] ?? 'unknown';
+                echo "[" . date('H:i:s') . "] Task: $action\n";
                 
                 // Keep DB alive
                 if (time() - $lastPing > 30) {
                     if (!@mysqli_ping($db)) {
+                        echo "[" . date('H:i:s') . "] DB Ping failed. Reconnecting...\n";
                         $db = getDB();
                     }
                     $lastPing = time();
@@ -45,8 +52,7 @@ while (true) {
             }
         }
     } catch (Throwable $e) {
-        echo "Worker Exception: " . $e->getMessage() . "\n";
-        sleep(2); // Prevent rapid looping on error
-        $db = getDB(); // Recurrent DB
+        echo "[" . date('H:i:s') . "] Worker Exception: " . $e->getMessage() . "\n";
+        sleep(2);
     }
 }
