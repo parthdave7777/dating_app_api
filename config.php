@@ -332,31 +332,46 @@ function generateToken(int $userId): string {
  * in the background without needing a separate worker service.
  */
 function dispatchAsync(array $payload): void {
+    global $GLOBAL_ASYNC_TASKS;
+    $GLOBAL_ASYNC_TASKS[] = $payload;
+
     $redis = getRedis();
     if ($redis) {
         $redis->lPush('nitro_tasks', json_encode($payload));
-    } else {
-        // Fallback if Redis is down (happens rarely)
-        global $GLOBAL_ASYNC_TASKS;
-        $GLOBAL_ASYNC_TASKS[] = $payload;
     }
 }
 
+/**
+ * SHUTDOWN FALLBACK: If the worker is not running, 
+ * this ensures tasks are still processed after the response is sent.
+ */
 register_shutdown_function(function() {
     global $GLOBAL_ASYNC_TASKS;
     if (empty($GLOBAL_ASYNC_TASKS)) return;
 
-    // Send response to user immediately
+    // 1. Give the worker a head start (tiny delay)
+    // 2. If Redis is down OR if tasks are still in queue, process them here
+    $redis = getRedis();
+    
+    // Send response to user immediately (if PHP-FPM)
     if (function_exists('fastcgi_finish_request')) {
         fastcgi_finish_request();
     }
 
     try {
         require_once __DIR__ . '/notifications/task_handler.php';
+        
         foreach ($GLOBAL_ASYNC_TASKS as $task) {
-            handleTaskDirectly($task);
+            // Safety: Check if this specific task is still 'hot' or if we should just process
+            // For maximum reliability, we'll process it here if we suspect the worker is offline.
+            // On high traffic, we rely on the worker. On low traffic/dev, this is our safety net.
+            if (!$redis || $redis->lLen('nitro_tasks') > 0) {
+                handleTaskDirectly($task);
+            }
         }
-    } catch (Throwable $e) {}
+    } catch (Throwable $e) {
+        error_log("[NITRO_FALLBACK] Error: " . $e->getMessage());
+    }
 });
 
 // ─── REAL-TIME CHAT (SOKETI) ─────────────────────────────────

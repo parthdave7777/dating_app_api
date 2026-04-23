@@ -23,6 +23,10 @@ $lastPing = time();
 while (true) {
     try {
         $redis = getRedis();
+        if ($redis) {
+            $redis->setex('worker_heartbeat', 60, time()); // Keep alive for 60s
+        }
+
         if (!$redis) {
             echo "[" . date('H:i:s') . "] Redis offline. Retrying in 5s...\n";
             sleep(5);

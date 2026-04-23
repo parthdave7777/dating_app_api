@@ -47,6 +47,13 @@ try {
         } else {
             $results['checks']['worker_status'] = 'IDLE (Queue is empty, waiting for new tasks)';
         }
+
+        // 4. HEARTBEAT & LOGS
+        $lastHeartbeat = $redis->get('worker_heartbeat');
+        $results['checks']['worker_last_seen'] = $lastHeartbeat ? (time() - $lastHeartbeat) . " seconds ago" : "NEVER (Worker not started)";
+        
+        $logs = $redis->lRange('worker_logs', 0, 9);
+        $results['worker_recent_activity'] = array_map('json_decode', $logs);
     } else {
         $results['checks']['redis'] = 'OFFLINE (Graceful Fallback Active)';
     }
