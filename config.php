@@ -117,13 +117,13 @@ function getDB(): mysqli {
             $flags = $isInternal ? 0 : MYSQLI_CLIENT_SSL;
             
             try {
-                $success = mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT, NULL, $flags);
-                if (!$success) $success = mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT, NULL, 0);
+                $success = mysqli_real_connect($conn, 'p:' . DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT, NULL, $flags);
+                if (!$success) $success = mysqli_real_connect($conn, 'p:' . DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT, NULL, 0);
             } catch (Exception $e) {
-                @mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT, NULL, 0);
+                @mysqli_real_connect($conn, 'p:' . DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT, NULL, 0);
             }
         } else {
-            mysqli_real_connect($conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT);
+            mysqli_real_connect($conn, 'p:' . DB_HOST, DB_USER, DB_PASS, DB_NAME, (int)DB_PORT);
         }
 
         $conn->set_charset('utf8mb4');

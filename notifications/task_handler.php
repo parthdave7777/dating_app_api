@@ -55,6 +55,12 @@ function handleTaskDirectly(array $payload) {
             'match_id'   => $payload['match_id']
         ]);
     }
+    else if ($type === 'message_deleted') {
+        broadcastToSoketi("match_" . $payload['match_id'], "message_deleted", [
+            'message_id' => $payload['message_id'],
+            'match_id'   => $payload['match_id'],
+        ]);
+    }
     else if ($type === 'acknowledge_purchase') {
         require_once __DIR__ . '/../credits/acknowledge.php';
         acknowledgeGooglePurchase(

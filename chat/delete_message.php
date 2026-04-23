@@ -69,9 +69,10 @@ $miStmt->close();
 
 if ($mRow) {
     dispatchAsync([
-        'action_type' => 'messages_read', // Re-using read logic to trigger a full refresh on other clients
+        'action_type' => 'message_deleted',
         'match_id'    => (int)$mRow['match_id'],
-        'reader_id'   => $userId
+        'message_id'  => $messageId,
+        'reader_id'   => $userId,
     ]);
 }
 $db->close();

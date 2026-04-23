@@ -4,11 +4,8 @@ require_once __DIR__ . '/../config.php';
 
 $userId = getAuthUserId();
 $db = getDB();
-autoSyncUserMeta($userId, $db);
-
-// Clear Expired Boosts (cheap indexed update)
-$db->query("UPDATE users SET is_new_user_boost = 0 
-            WHERE is_new_user_boost = 1 AND new_user_boost_expires < NOW()");
+// NOTE: autoSyncUserMeta() was removed from here to save 2 DB writes per request.
+// It now runs in profile/sync.php, called once per app open from the client.
 
 // 3. Fetch Current User
 $meStmt = $db->prepare("
@@ -59,7 +56,32 @@ $page  = max(1, (int)($_GET['page'] ?? 1));
 $limit = 30;
 $offset = ($page - 1) * $limit;
 
+// ── REDIS 60s CACHE (keyed on user + all filter params) ─────────────────────
+// A user browsing cards doesn't need fresh DB data on every swipe.
+// Cache is invalidated automatically after 60 seconds.
+$redis = getRedis();
+$cacheKeyParts = [
+    'disc', $userId, $page,
+    $minAge, $maxAge, $minDist, $maxDist,
+    $isGlobal ? '1' : '0',
+    $_GET['relationship_goal'] ?? '', $_GET['smoking'] ?? '',
+    $_GET['drinking'] ?? '', $_GET['pets'] ?? '',
+    $_GET['workout'] ?? '', $_GET['diet'] ?? '',
+    $_GET['schedule'] ?? '', $_GET['communication_style'] ?? '',
+];
+$cacheKey = 'disc_' . md5(implode('|', $cacheKeyParts));
 
+if ($redis) {
+    $cached = $redis->get($cacheKey);
+    if ($cached !== false) {
+        echo $cached; // Serve instantly from Redis — zero DB queries
+        exit();
+    }
+}
+
+// Clear Expired Boosts (cheap indexed update, done only on cache miss)
+$db->query("UPDATE users SET is_new_user_boost = 0
+            WHERE is_new_user_boost = 1 AND new_user_boost_expires < NOW()");
 
 // 5. Gender Normalization
 $myGender = strtolower($me['gender'] ?? '');
@@ -222,7 +244,7 @@ foreach ($rows as $row) {
 
 $db->close();
 
-echo json_encode([
+$responseJson = json_encode([
     'status'   => 'success',
     'users'    => $finalUsers,
     'metadata' => [
@@ -231,6 +253,14 @@ echo json_encode([
         'engine'   => 'Distance-First-v2',
     ]
 ]);
+
+// Store in Redis for 60 seconds (cache miss path only)
+if ($redis) {
+    $redis->setex($cacheKey, 60, $responseJson);
+}
+
+echo $responseJson;
+
 
 // ─── Haversine (kept for any future server-side use) ─────────────────────────
 function haversineKm(float $lat1, float $lon1, float $lat2, float $lon2): float {
