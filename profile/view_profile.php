@@ -95,10 +95,17 @@ if (!$hasRecent) {
     $viewerName  = $infoRow['full_name'] ?? 'Someone';
     $viewerPhoto = $infoRow['photo'] ?? '';
     
-    sendPush($db, $viewedId, 'profile_view', "Profile Viewed! 👀", "$viewerName just viewed your profile.", [
-        'sender_id'    => (string)$userId,
-        'sender_name'  => $viewerName,
-        'sender_photo' => $viewerPhoto,
+    // NITRO OPTIMIZATION: Dispatch push asynchronously
+    dispatchAsync([
+        'action_type'  => 'profile_view',
+        'recipient_id' => $viewedId,
+        'title'        => 'Profile Viewed! 👀',
+        'body'         => "$viewerName just viewed your profile.",
+        'data'         => [
+            'sender_id'    => (string)$userId,
+            'sender_name'  => $viewerName,
+            'sender_photo' => $viewerPhoto,
+        ]
     ]);
 }
 

@@ -89,6 +89,9 @@ function handleTaskDirectly(array $payload) {
                 $payload['user_id']
             );
         }
+        else if ($type === 'profile_view') {
+            sendPush(getDB(), $payload['recipient_id'], 'profile_view', $payload['title'], $payload['body'], $payload['data']);
+        }
     } catch (Throwable $e) {
         $logEntry['status'] = 'FAILED: ' . $e->getMessage();
     }
