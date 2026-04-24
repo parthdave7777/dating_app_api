@@ -567,6 +567,10 @@ function deductCredits(mysqli $db, int $userId, int $amount, string $reason): bo
         $log->close();
         
         $db->commit();
+        
+        // NITRO FIX: Clear cache immediately so get_profile fetches fresh balance
+        clearProfileCache($userId);
+        
         return true;
     } catch (Exception $e) {
         $db->rollback();

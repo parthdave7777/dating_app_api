@@ -104,5 +104,9 @@ $response = [
     'new_balance' => getUserCredits($db, $userId)
 ];
 
+// NITRO CACHE CLEANUP
+clearProfileCache($userId);
+clearDiscoveryCache($userId);
+
 $db->close();
 echo json_encode($response);
