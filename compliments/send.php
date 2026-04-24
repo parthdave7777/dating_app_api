@@ -20,45 +20,55 @@ if (!$receiverId || empty($message)) {
 
 $db = getDB();
 
-// ── Credit Deduction ──────────────────────────────────────────
-if (!deductCredits($db, $userId, CREDIT_COST_COMPLIMENT, "Sent Compliment")) {
-    echo json_encode([
-        'status' => 'error', 
-        'message' => 'Insufficient credits for a compliment.', 
-        'error_code' => 'INSUFFICIENT_CREDITS'
-    ]);
-    exit();
-}
-
-// 1. One complement only check
-$checkStmt = $db->prepare("SELECT id FROM compliments WHERE sender_id = ? AND receiver_id = ?");
-$checkStmt->bind_param('ii', $userId, $receiverId);
-$checkStmt->execute();
-if ($checkStmt->get_result()->num_rows > 0) {
+// ── Transaction Start ──────────────────────────────────────────
+$db->begin_transaction();
+try {
+    // 1. One complement only check (Inside transaction for consistency)
+    $checkStmt = $db->prepare("SELECT id FROM compliments WHERE sender_id = ? AND receiver_id = ?");
+    $checkStmt->bind_param('ii', $userId, $receiverId);
+    $checkStmt->execute();
+    if ($checkStmt->get_result()->num_rows > 0) {
+        throw new Exception("ALREADY_SENT");
+    }
     $checkStmt->close();
-    $db->close();
-    echo json_encode(['status' => 'error', 'message' => 'You have already sent a compliment to this user']);
+
+    // 2. Credit Deduction
+    if (!deductCredits($db, $userId, CREDIT_COST_COMPLIMENT, "Sent Compliment")) {
+        throw new Exception("INSUFFICIENT_CREDITS");
+    }
+
+    // 3. Insert compliment
+    $stmt = $db->prepare("INSERT INTO compliments (sender_id, receiver_id, message) VALUES (?, ?, ?)");
+    $stmt->bind_param('iis', $userId, $receiverId, $message);
+    $stmt->execute();
+    $stmt->close();
+
+    // 4. Increment ELO (+15 for compliment)
+    $db->query("UPDATE users SET elo_score = elo_score + 15 WHERE id = $receiverId");
+
+    // 5. Record as 'compliment' in swipes table
+    $swipeStmt = $db->prepare("
+        INSERT INTO swipes (swiper_id, swiped_id, action) VALUES (?, ?, 'compliment')
+        ON DUPLICATE KEY UPDATE action = VALUES(action), created_at = NOW()
+    ");
+    $swipeStmt->bind_param('ii', $userId, $receiverId);
+    $swipeStmt->execute();
+    $swipeStmt->close();
+
+    $db->commit();
+} catch (Exception $e) {
+    $db->rollback();
+    $error = $e->getMessage();
+    
+    if ($error === "ALREADY_SENT") {
+        echo json_encode(['status' => 'error', 'message' => 'You have already sent a compliment to this user']);
+    } else if ($error === "INSUFFICIENT_CREDITS") {
+        echo json_encode(['status' => 'error', 'message' => 'Insufficient credits for a compliment.', 'error_code' => 'INSUFFICIENT_CREDITS']);
+    } else {
+        echo json_encode(['status' => 'error', 'message' => 'Server Error: ' . $error]);
+    }
     exit();
 }
-$checkStmt->close();
-
-// 2. Insert compliment
-$stmt = $db->prepare("INSERT INTO compliments (sender_id, receiver_id, message) VALUES (?, ?, ?)");
-$stmt->bind_param('iis', $userId, $receiverId, $message);
-$stmt->execute();
-$stmt->close();
-
-// 3. Increment ELO (+15 for compliment)
-$db->query("UPDATE users SET elo_score = elo_score + 15 WHERE id = $receiverId");
-
-// 4. Record as 'compliment' in swipes table
-$swipeStmt = $db->prepare("
-    INSERT INTO swipes (swiper_id, swiped_id, action) VALUES (?, ?, 'compliment')
-    ON DUPLICATE KEY UPDATE action = VALUES(action), created_at = NOW()
-");
-$swipeStmt->bind_param('ii', $userId, $receiverId);
-$swipeStmt->execute();
-$swipeStmt->close();
 
 // 5. Match Processing
 $isMatch = false;
