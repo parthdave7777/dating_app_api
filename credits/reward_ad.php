@@ -57,6 +57,9 @@ try {
     $newBalanceCheck->execute();
     $newBalance = $newBalanceCheck->get_result()->fetch_assoc()['premium_credits'];
 
+    // NITRO CACHE CLEANUP
+    clearProfileCache($userId);
+
     echo json_encode([
         'status' => 'success',
         'message' => "Rewarded $creditsPerAd credits!",

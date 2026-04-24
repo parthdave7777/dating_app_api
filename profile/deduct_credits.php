@@ -60,4 +60,7 @@ if (deductCredits($db, $userId, $cost, $reason)) {
     echo json_encode(['status' => 'error', 'message' => 'Insufficient credits', 'error_code' => 'INSUFFICIENT_CREDITS']);
 }
 
+// NITRO CACHE CLEANUP
+clearProfileCache($userId);
+
 $db->close();

@@ -59,6 +59,9 @@ try {
     // Get new total
     $res = $db->query("SELECT credits, premium_credits FROM users WHERE id = $userId")->fetch_assoc();
     $total = (int)($res['credits'] ?? 0) + (int)($res['premium_credits'] ?? 0);
+    
+    // NITRO CACHE CLEANUP
+    clearProfileCache($userId);
 
     echo json_encode([
         'status' => 'success',

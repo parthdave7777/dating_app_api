@@ -75,6 +75,9 @@ if ($action === 'verify') {
         
         $total = (int)($res['credits'] ?? 0) + (int)($res['premium_credits'] ?? 0);
         
+        // NITRO CACHE CLEANUP
+        clearProfileCache($userId);
+        
         echo json_encode([
             'status' => 'success',
             'message' => 'Credits added successfully!',

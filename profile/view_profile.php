@@ -102,6 +102,9 @@ if (!$hasRecent) {
     ]);
 }
 
+// NITRO CACHE CLEANUP
+clearProfileCache($userId);
+
 $db->close();
 echo json_encode([
     'status' => 'success', 
