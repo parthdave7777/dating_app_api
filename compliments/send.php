@@ -18,6 +18,19 @@ if (!$receiverId || empty($message)) {
     exit();
 }
 
+// Anti-spam: check if user sent more than 20 compliments in the last hour
+$redis = getRedis();
+if ($redis) {
+    $spamKey = "compliment_rate_$userId";
+    $count = $redis->incr($spamKey);
+    if ($count == 1) $redis->expire($spamKey, 3600);
+    if ($count > 20) {
+        http_response_code(429);
+        echo json_encode(['status' => 'error', 'message' => 'You are sending too many compliments! Take a break.', 'error_code' => 'RATE_LIMITED']);
+        exit();
+    }
+}
+
 $db = getDB();
 
 // ── Credit Deduction ──────────────────────────────────────────

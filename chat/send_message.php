@@ -19,6 +19,19 @@ if (!$matchId || empty($message)) {
     exit();
 }
 
+// Anti-spam: check if user is sending more than 30 messages per minute using Redis
+$redis = getRedis();
+if ($redis) {
+    $spamKey = "msg_rate_$userId";
+    $count = $redis->incr($spamKey);
+    if ($count == 1) $redis->expire($spamKey, 60);
+    if ($count > 30) {
+        http_response_code(429);
+        echo json_encode(['status' => 'error', 'message' => 'You are sending messages too fast! Please slow down.', 'error_code' => 'RATE_LIMITED']);
+        exit();
+    }
+}
+
 // 2. Database Connection
 $db = getDB();
 
