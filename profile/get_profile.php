@@ -8,42 +8,8 @@ $db     = getDB();
 if (isset($_GET['target_id']) && (int)$_GET['target_id'] !== $userId) {
     $targetId = (int) $_GET['target_id'];
     
-    // 1. Notification Logic (Keep this in DB, very fast indexed read)
-    $viewCheck = $db->prepare("SELECT viewed_at FROM profile_views WHERE viewer_id = ? AND viewed_id = ?");
-    $viewCheck->bind_param('ii', $userId, $targetId);
-    $viewCheck->execute();
-    $viewRes = $viewCheck->get_result()->fetch_assoc();
-    $viewCheck->close();
-
-    $isNewView = (!$viewRes);
-    $shouldNotify = true;
-    if ($viewRes && (time() - strtotime($viewRes['viewed_at']) < (6 * 3600))) {
-        $shouldNotify = false;
-    }
-
-    // ── Check if already matched (Chat/Match views are free) ────
-    $matchCheck = $db->prepare("SELECT id FROM matches WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)");
-    $u1 = min($userId, $targetId); $u2 = max($userId, $targetId);
-    $matchCheck->bind_param('iiii', $u1, $u2, $u1, $u2);
-    $matchCheck->execute();
-    $alreadyMatched = $matchCheck->get_result()->num_rows > 0;
-    $matchCheck->close();
-
-    // ── Credit Deduction for Map/Discovery View ────────────────
-    if ($isNewView && !$alreadyMatched) {
-        if (!deductCredits($db, $userId, CREDIT_COST_PROFILE_VIEW, "First View: User ID $targetId")) {
-            http_response_code(402);
-            echo json_encode(['status' => 'error', 'message' => 'INSUFFICIENT_CREDITS', 'required' => CREDIT_COST_PROFILE_VIEW]);
-            exit();
-        }
-    }
-
+    // 1. Record the view (Silent, no charging here — view_profile.php handles charging)
     $db->query("INSERT INTO profile_views (viewer_id, viewed_id) VALUES ($userId, $targetId) ON DUPLICATE KEY UPDATE viewed_at = NOW()");
-
-    if ($shouldNotify) {
-        require_once __DIR__ . '/../notifications/send_push.php';
-        sendProfileViewNotification($db, $userId, $targetId);
-    }
 
     // 2. Block Check
     $blockStmt = $db->prepare("SELECT 1 FROM blocks WHERE (blocker_id = ? AND blocked_user_id = ?) OR (blocker_id = ? AND blocked_user_id = ?)");

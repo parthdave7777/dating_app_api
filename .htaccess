@@ -7,9 +7,13 @@ Options -Indexes
     Deny from all
 </FilesMatch>
 
-# 3. Block access to system/dev folders
+# 3. Block access to system/dev folders & Handle Authorization Header
 RewriteEngine On
 RewriteRule ^(vendor|debug|scripts|logs|ci|\.git)/ - [F,L]
+
+# Pass Authorization Header to PHP (Needed for Bearer tokens on many Apache setups)
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
 # 4. Enforce UTF-8 and Security (if mod_headers is enabled)
 <IfModule mod_headers.c>

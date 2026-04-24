@@ -62,6 +62,7 @@ try {
     } else {
         echo json_encode(['status' => 'error', 'message' => 'Transaction failed: ' . $e->getMessage()]);
     }
+    exit();
 }
 
 // ── Send Notification (with cooldown) ─────────────────────────
