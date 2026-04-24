@@ -69,7 +69,7 @@ $cacheKeyParts = [
     $_GET['workout'] ?? '', $_GET['diet'] ?? '',
     $_GET['schedule'] ?? '', $_GET['communication_style'] ?? '',
 ];
-$cacheKey = 'disc_' . md5(implode('|', $cacheKeyParts));
+$cacheKey = "disc_{$userId}_" . md5(implode('|', $cacheKeyParts));
 
 if ($redis) {
     $cached = $redis->get($cacheKey);
@@ -144,7 +144,7 @@ $sql = "
       )
       AND bl.blocker_id IS NULL
       AND mt.user1_id   IS NULL
-      AND (sw.action IS NULL OR (sw.action = 'dislike' AND sw.created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)))
+      AND (sw.action IS NULL OR (sw.action = 'dislike' AND sw.created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)))
       AND ($distSql) >= COALESCE(u.stealth_radius, 0)
       $boundsCondition
     ORDER BY " . ($isGlobal ? "u.last_active DESC" : "distance_km ASC") . "

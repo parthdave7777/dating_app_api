@@ -314,6 +314,19 @@ function clearProfileCache(int $userId): void {
     }
 }
 
+/**
+ * Clears all discovery caches for a user.
+ */
+function clearDiscoveryCache(int $userId): void {
+    $redis = getRedis();
+    if ($redis) {
+        $keys = $redis->keys("disc_{$userId}_*");
+        if (!empty($keys)) {
+            foreach ($keys as $key) $redis->del($key);
+        }
+    }
+}
+
 function generateToken(int $userId): string {
     $header    = base64UrlEncode(json_encode(['alg' => 'HS256', 'typ' => 'JWT']));
     $payload   = base64UrlEncode(json_encode([

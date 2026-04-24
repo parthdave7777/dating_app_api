@@ -92,6 +92,12 @@ try {
     $stmt->bind_param('iissss', $userId, $swipedUserId, $action, $now, $action, $now);
     $stmt->execute();
     $stmt->close();
+
+    // NITRO SYNC: Record as a 'view' so map knows we've seen them
+    $vStmt = $db->prepare("INSERT IGNORE INTO profile_views (viewer_id, viewed_id) VALUES (?, ?)");
+    $vStmt->bind_param('ii', $userId, $swipedUserId);
+    $vStmt->execute();
+    $vStmt->close();
     
     $db->commit();
 } catch (Exception $e) {
@@ -191,6 +197,7 @@ $newBalance = getUserCredits($db, $userId);
 
 // NITRO CACHE CLEANUP
 clearProfileCache($userId);
+clearDiscoveryCache($userId);
 clearProfileCache($swipedUserId);
 
 $db->close();

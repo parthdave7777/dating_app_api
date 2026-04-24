@@ -8,9 +8,6 @@ $db     = getDB();
 if (isset($_GET['target_id']) && (int)$_GET['target_id'] !== $userId) {
     $targetId = (int) $_GET['target_id'];
     
-    // 1. Record the view (Silent, no charging here — view_profile.php handles charging)
-    $db->query("INSERT INTO profile_views (viewer_id, viewed_id) VALUES ($userId, $targetId) ON DUPLICATE KEY UPDATE viewed_at = NOW()");
-
     // 2. Block Check
     $blockStmt = $db->prepare("SELECT 1 FROM blocks WHERE (blocker_id = ? AND blocked_user_id = ?) OR (blocker_id = ? AND blocked_user_id = ?)");
     $blockStmt->bind_param('iiii', $userId, $targetId, $targetId, $userId);
