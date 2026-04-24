@@ -42,7 +42,7 @@ while ($row = $result->fetch_assoc()) {
     $uStmt->close();
     
     if ($uRow) {
-        $photo = !empty($uRow['photo']) ? cloudinaryTransform($uRow['photo'], 'w_200,c_thumb,g_face,q_auto,f_auto') : '';
+        $photo = !empty($uRow['photo']) ? cloudinaryTransform($uRow['photo'], 'w_300,q_auto,f_auto') : '';
         
         $matches[] = [
             'match_id' => (int) $row['match_id'],

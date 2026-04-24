@@ -101,7 +101,7 @@ if (!empty($matches)) {
             }
         }
 
-        $chatPhoto = !empty($other['photo']) ? cloudinaryTransform($other['photo'], 'w_150,c_thumb,g_face,q_auto,f_auto') : '';
+        $chatPhoto = !empty($other['photo']) ? cloudinaryTransform($other['photo'], 'w_300,q_auto,f_auto') : '';
 
         $chats[] = [
             'match_id'          => (int)  $row['match_id'],

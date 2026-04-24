@@ -335,7 +335,7 @@ function getOtherUser(mysqli $db, int $otherId): array {
 
     if (!$row) return ['id' => $otherId, 'full_name' => 'User', 'photo_url' => '', 'photo' => ''];
 
-    $photo = !empty($row['photo']) ? cloudinaryTransform($row['photo'], 'w_150,c_thumb,g_face,q_auto,f_auto') : '';
+    $photo = !empty($row['photo']) ? cloudinaryTransform($row['photo'], 'w_300,q_auto,f_auto') : '';
     return [
         'id'        => (int) $row['id'],
         'full_name' =>       $row['full_name'] ?? 'User',
