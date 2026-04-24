@@ -51,17 +51,16 @@ try {
 
     $db->commit();
     
-    // 5. Return TOTAL Balance (free + premium)
-    $totalBalanceCheck = $db->prepare("SELECT (credits + premium_credits) as total FROM users WHERE id = ?");
-    $totalBalanceCheck->bind_param('i', $userId);
-    $totalBalanceCheck->execute();
-    $totalBalance = $totalBalanceCheck->get_result()->fetch_assoc()['total'];
-    $totalBalanceCheck->close();
+    // Get new balance
+    $newBalanceCheck = $db->prepare("SELECT premium_credits FROM users WHERE id = ?");
+    $newBalanceCheck->bind_param('i', $userId);
+    $newBalanceCheck->execute();
+    $newBalance = $newBalanceCheck->get_result()->fetch_assoc()['premium_credits'];
 
     echo json_encode([
         'status' => 'success',
         'message' => "Rewarded $creditsPerAd credits!",
-        'new_balance' => (int)$totalBalance,
+        'new_balance' => $newBalance,
         'remaining_ads' => $dailyLimit - ($currentCount + 1)
     ]);
 

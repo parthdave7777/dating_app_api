@@ -19,7 +19,6 @@ try {
         FROM credit_logs cl
         LEFT JOIN purchase_tokens pt ON (cl.reason = CONCAT('Play purchase: ', pt.product_id) AND pt.user_id = cl.user_id)
         WHERE cl.user_id = ? 
-        AND (cl.is_purchase = 1 OR cl.reason LIKE 'Purchase:%') 
         ORDER BY cl.created_at DESC 
         LIMIT 50");
     $stmt->bind_param('i', $userId);
