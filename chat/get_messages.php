@@ -233,7 +233,16 @@ function markReceived(mysqli $db, int $matchId, int $userId): void {
     );
     $recStmt->bind_param('sii', $now, $matchId, $userId);
     $recStmt->execute();
+    $affected = $recStmt->affected_rows;
     $recStmt->close();
+
+    if ($affected > 0) {
+        dispatchAsync([
+            'action_type' => 'messages_received',
+            'match_id'    => $matchId,
+            'user_id'     => $userId
+        ]);
+    }
 }
 
 function buildFullResponse(mysqli $db, int $matchId, int $userId, int $otherId): array {

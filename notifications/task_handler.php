@@ -67,6 +67,18 @@ function handleTaskDirectly(array $payload) {
                 'match_id'   => $payload['match_id'],
             ]);
         }
+        else if ($type === 'media_opened') {
+            broadcastToSoketi("match_" . $payload['match_id'], "media_opened", [
+                'message_id' => $payload['message_id'],
+                'match_id'   => $payload['match_id'],
+            ]);
+        }
+        else if ($type === 'messages_received') {
+            broadcastToSoketi("match_" . $payload['match_id'], "messages_received", [
+                'match_id'  => $payload['match_id'],
+                'user_id'   => $payload['user_id']
+            ]);
+        }
         else if ($type === 'acknowledge_purchase') {
             require_once __DIR__ . '/../credits/acknowledge.php';
             acknowledgeGooglePurchase(
