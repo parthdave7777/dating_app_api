@@ -29,15 +29,6 @@ if (empty($idToken) || empty($phone)) {
     exit();
 }
 
-// Brute-force protection: Limit login attempts
-// We use a hash of the phone as part of the key for anonymity
-$limitKey = "login_attempt:" . md5($phone);
-if (!checkRateLimit($limitKey, 10, 900)) {
-    http_response_code(429);
-    echo json_encode(['status' => 'error', 'message' => 'Too many login attempts. Please wait 15 minutes.', 'error_code' => 'RATE_LIMITED']);
-    exit();
-}
-
 // ── FIREBASE NOT CONFIGURED (dev bypass) ────────────────────
 //  If Firebase credentials are not yet set up, we skip token
 //  verification and trust the phone number from the request.
