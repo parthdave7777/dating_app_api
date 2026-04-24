@@ -12,7 +12,7 @@ $userId  = getAuthUserId();
 $body    = json_decode(file_get_contents('php://input'), true);
 $matchId = (int)   ($body['match_id'] ?? 0);
 $message = trim($body['message']  ?? '');
-$type    = in_array($body['type'] ?? '', ['text','image']) ? $body['type'] : 'text';
+$type    = in_array($body['type'] ?? '', ['text','image','image_view_once','video_view_once']) ? $body['type'] : 'text';
 
 if (!$matchId || empty($message)) {
     echo json_encode(['status' => 'error', 'message' => 'match_id and message are required']);
@@ -50,7 +50,7 @@ $stmt->execute();
 $msgId = $db->insert_id;
 $stmt->close();
 
-// 5. Construct response object manually (Save 1 DB Query)
+// 5. Construct response object manually
 $sharedMessage = [
     'id'          => (int)  $msgId,
     'sender_id'   => (int)  $userId,
@@ -71,30 +71,32 @@ $responseData = json_encode([
     'message'    => $sharedMessage
 ]);
 
-ignore_user_abort(true);
-set_time_limit(30);
-
-// Close the connection so the mobile app finishes the request immediately
-ob_start();
-echo $responseData;
-$size = ob_get_length();
-header("Content-Length: $size");
-header("Connection: close");
-header("Content-Encoding: none");
-ob_end_flush();
-flush();
-
 if (function_exists('fastcgi_finish_request')) {
+    echo $responseData;
     fastcgi_finish_request();
+} else {
+    // Fallback for non-FPM
+    ignore_user_abort(true);
+    set_time_limit(30);
+    ob_start();
+    echo $responseData;
+    header("Content-Length: " . ob_get_length());
+    header("Connection: close");
+    ob_end_flush();
+    flush();
 }
 
 // === BACKGROUND TASKS (Notifications) ===
-// 6. Non-critical Background Dispatch (NITRO Queue)
 $recipientId = ((int)$matchRow['user1_id'] === $userId) ? (int)$matchRow['user2_id'] : (int)$matchRow['user1_id'];
 $workerPayload = [
-    'action_type'  => 'new_message', 'match_id' => $matchId, 'recipient_id' => $recipientId,
-    'sender_id' => $userId, 'sender_name' => $matchRow['me_name'],
-    'message_text' => $message, 'message_type' => $type, 'message_row' => $sharedMessage
+    'action_type'  => 'new_message', 
+    'match_id'     => $matchId, 
+    'recipient_id' => $recipientId,
+    'sender_id'    => $userId, 
+    'sender_name'  => $matchRow['me_name'],
+    'message_text' => $message, 
+    'message_type' => $type, 
+    'message_row'  => $sharedMessage
 ];
 
 dispatchAsync($workerPayload);
