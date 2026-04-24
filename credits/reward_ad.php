@@ -51,11 +51,8 @@ try {
 
     $db->commit();
     
-    // Get new balance
-    $newBalanceCheck = $db->prepare("SELECT premium_credits FROM users WHERE id = ?");
-    $newBalanceCheck->bind_param('i', $userId);
-    $newBalanceCheck->execute();
-    $newBalance = $newBalanceCheck->get_result()->fetch_assoc()['premium_credits'];
+    // Get new balance (Total of standard + premium)
+    $newBalance = getUserCredits($db, $userId);
 
     // NITRO CACHE CLEANUP
     clearProfileCache($userId);
