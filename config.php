@@ -73,11 +73,11 @@ if (APP_ENV === 'local') {
     
 } else {
     // ── PRODUCTION (Aiven MySQL + Render) ───────────────────
-    define('DB_HOST', getenv('DB_HOST') ?: '');
-    define('DB_PORT', getenv('DB_PORT') ?: '3306');
-    define('DB_USER', getenv('DB_USER') ?: '');
-    define('DB_PASS', getenv('DB_PASS') ?: '');
-    define('DB_NAME', getenv('DB_NAME') ?: '');
+    define('DB_HOST', getenv('DB_HOST') ?: getenv('MYSQLHOST') ?: '');
+    define('DB_PORT', getenv('DB_PORT') ?: getenv('MYSQLPORT') ?: '3306');
+    define('DB_USER', getenv('DB_USER') ?: getenv('MYSQLUSER') ?: '');
+    define('DB_PASS', getenv('DB_PASS') ?: getenv('MYSQLPASSWORD') ?: '');
+    define('DB_NAME', getenv('DB_NAME') ?: getenv('MYSQLDATABASE') ?: '');
     define('USE_SSL', true);
     define('STORAGE_MODE', 'cloudinary');
     define('JWT_SECRET', getenv('JWT_SECRET') ?: 'CHANGE_THIS_TO_A_LONG_RANDOM_STRING_min32chars');
@@ -375,7 +375,7 @@ register_shutdown_function(function() {
 });
 
 // ─── REAL-TIME CHAT (SOKETI) ─────────────────────────────────
-define('SOKETI_HOST',   getenv('SOKETI_HOST')   ?: 'soketi-production-3817.up.railway.app');
+define('SOKETI_HOST',   getenv('SOKETI_HOST')   ?: 'soketi-production-f741.up.railway.app');
 define('SOKETI_APP_ID', getenv('SOKETI_APP_ID') ?: 'legitdate-app');
 define('SOKETI_KEY',    getenv('SOKETI_APP_KEY')    ?: 'legit-key-123');
 define('SOKETI_SECRET', getenv('SOKETI_APP_SECRET') ?: 'legit-secret-456');

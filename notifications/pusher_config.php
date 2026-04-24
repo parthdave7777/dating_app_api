@@ -4,11 +4,11 @@
 require_once __DIR__ . '/../vendor/autoload.php';
 
 // USE YOUR RAILWAY SOKETI DOMAIN HERE (Example: 'soketi-production.up.railway.app')
-define('SOKETI_HOST', 'soketi-production-3817.up.railway.app'); 
-define('SOKETI_PORT', 443); // Railway uses 443 for HTTPS
-define('SOKETI_APP_ID', 'legitdate-app');
-define('SOKETI_APP_KEY', 'legit-key-123');
-define('SOKETI_APP_SECRET', 'legit-secret-456');
+define('SOKETI_HOST', getenv('SOKETI_HOST') ?: 'soketi-production-f741.up.railway.app'); 
+define('SOKETI_PORT', getenv('SOKETI_PORT') ? (int)getenv('SOKETI_PORT') : 443); 
+define('SOKETI_APP_ID', getenv('SOKETI_APP_ID') ?: 'legitdate-app');
+define('SOKETI_APP_KEY', getenv('SOKETI_APP_KEY') ?: 'legit-key-123');
+define('SOKETI_APP_SECRET', getenv('SOKETI_APP_SECRET') ?: 'legit-secret-456');
 
 function getPusher() {
     $options = [
