@@ -335,7 +335,12 @@ function sendPush(
 
         $result   = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr  = curl_error($ch);
         curl_close($ch);
+
+        // DEBUG LOGGING
+        $debugLog = date('Y-m-d H:i:s') . " - Push to $toUserId - Type: $type - HTTP: $httpCode - Result: $result - Error: $curlErr\n";
+        @file_put_contents(__DIR__ . '/push_debug.txt', $debugLog, FILE_APPEND);
 
         if ($httpCode === 404) {
             error_log("[FCM] ERROR 404: Token unregistered for user $toUserId. Clearing from DB.");
@@ -350,7 +355,7 @@ function sendPush(
         }
     }
     if (!$success) {
-        $err = isset($ch) ? curl_error($ch) : "No CURL resource";
+        $err = $curlErr ?: "No CURL resource or API Error";
         error_log("[FCM] sendPush() returning FALSE for user $toUserId. HTTP: " . ($httpCode ?? 'N/A') . " Error: $err");
     }
     return $success;

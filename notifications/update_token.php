@@ -41,10 +41,5 @@ if ($stmt->execute()) {
 }
 
 $stmt->close();
-
-// NITRO FIX: Clear cache so send_push.php sees the new token
-clearProfileCache($userId);
-
 $db->close();
-
-echo json_encode(['status' => 'success']);
+exit();
