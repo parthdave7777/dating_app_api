@@ -56,7 +56,7 @@ foreach ($rows as $row) {
             'is_verified' => (bool)$other['is_verified'],
             'is_active_now' => (strtotime($other['last_active'] ?? '') > (time() - 300)),
             // Optimized DP thumbnail for match list
-            'dp_url'      => cloudinaryTransform($other['dp_url'] ?? '', 'w_300,c_thumb,g_face,q_auto,f_auto'),
+            'dp_url'      => cloudinaryTransform($other['dp_url'] ?? '', 'w_300,q_auto,f_auto'),
         ],
     ];
 }

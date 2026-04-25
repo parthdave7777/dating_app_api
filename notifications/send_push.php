@@ -377,7 +377,7 @@ if (!function_exists('getSenderInfo')) {
         
         $photo = $res['photo'] ?? '';
         if (function_exists('cloudinaryTransform')) {
-            $photo = cloudinaryTransform($photo, 'w_200,c_thumb,g_face,q_auto,f_auto');
+            $photo = cloudinaryTransform($photo, 'w_200,q_auto,f_auto');
         }
 
         return [
