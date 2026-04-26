@@ -53,7 +53,7 @@ $isGlobal = isset($_GET['global_discovery'])
 
 // Pagination
 $page  = max(1, (int)($_GET['page'] ?? 1));
-$limit = 30;
+$limit = 15;
 $offset = ($page - 1) * $limit;
 
 // ── REDIS 60s CACHE (keyed on user + all filter params) ─────────────────────
