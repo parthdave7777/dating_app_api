@@ -23,14 +23,44 @@ $db = getDB();
 if ($action === 'rewind') {
     $db->begin_transaction();
     try {
+        // 1. Check if the swipe actually exists
+        $check = $db->prepare("SELECT action FROM swipes WHERE swiper_id = ? AND swiped_id = ?");
+        $check->bind_param('ii', $userId, $swipedUserId);
+        $check->execute();
+        $swipeExists = $check->get_result()->fetch_assoc();
+        $check->close();
+
+        if (!$swipeExists) {
+            throw new Exception("NOTHING_TO_REWIND");
+        }
+
+        // 2. Check if it's already a match (we shouldn't rewind matches)
+        $mCheck = $db->prepare("SELECT id FROM matches WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)");
+        $mCheck->bind_param('iiii', $userId, $swipedUserId, $swipedUserId, $userId);
+        $mCheck->execute();
+        $matchExists = $mCheck->get_result()->fetch_assoc();
+        $mCheck->close();
+
+        if ($matchExists) {
+            throw new Exception("CANNOT_REWIND_MATCH");
+        }
+
+        // 3. Deduct credits
         if (!deductCredits($db, $userId, CREDIT_COST_REWIND, "Rewind interaction with ID: $swipedUserId")) {
             throw new Exception("INSUFFICIENT_CREDITS");
         }
 
+        // 4. Delete the swipe
         $del = $db->prepare("DELETE FROM swipes WHERE swiper_id = ? AND swiped_id = ?");
         $del->bind_param('ii', $userId, $swipedUserId);
         $del->execute();
         $del->close();
+        
+        // 5. Also clear as 'viewed' so they can see them again immediately
+        $vDel = $db->prepare("DELETE FROM profile_views WHERE viewer_id = ? AND viewed_id = ?");
+        $vDel->bind_param('ii', $userId, $swipedUserId);
+        $vDel->execute();
+        $vDel->close();
         
         $db->commit();
         echo json_encode(['status' => 'success', 'message' => 'Action rewound', 'new_balance' => getUserCredits($db, $userId)]);
@@ -38,6 +68,10 @@ if ($action === 'rewind') {
         $db->rollback();
         if ($e->getMessage() === "INSUFFICIENT_CREDITS") {
             echo json_encode(['status' => 'error', 'message' => 'Insufficient credits for rewind', 'error_code' => 'INSUFFICIENT_CREDITS']);
+        } elseif ($e->getMessage() === "NOTHING_TO_REWIND") {
+            echo json_encode(['status' => 'error', 'message' => 'Nothing to rewind!', 'error_code' => 'NOTHING_TO_REWIND']);
+        } elseif ($e->getMessage() === "CANNOT_REWIND_MATCH") {
+            echo json_encode(['status' => 'error', 'message' => 'Cannot rewind a mutual match.', 'error_code' => 'MATCH_EXISTS']);
         } else {
             echo json_encode(['status' => 'error', 'message' => 'Rewind failed: ' . $e->getMessage()]);
         }
