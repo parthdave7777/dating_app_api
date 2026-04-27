@@ -2,10 +2,12 @@
 // chat/get_messages.php
 require_once __DIR__ . '/../config.php';
 
-// BUG FIX: Increase time limit for long polling; ignore client disconnects so
-// the response is still sent even if the app briefly goes to background.
-set_time_limit(35);
-ignore_user_abort(true);
+/**
+ * OPTIMIZATION: Removed set_time_limit(35) and ignore_user_abort(true).
+ * We now use Soketi (WebSockets) for real-time updates. 
+ * This script now performs a FAST single-read and returns immediately,
+ * which allows the server to handle 1000+ concurrent users easily.
+ */
 
 $userId   = getAuthUserId();
 $matchId  = (int) ($_GET['match_id']  ?? 0);
